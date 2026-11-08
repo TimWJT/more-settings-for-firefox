@@ -97,13 +97,16 @@ async function showFlag(tabId, url) {
   } catch { /* tab closed */ }
 }
 
-browser.webRequest.onResponseStarted.addListener((d) => {
+browser.webRequest.onResponseStarted.addListener(async (d) => {
   if (d.tabId < 0) return;
-  rememberServer(d.tabId, d.url, d.ip).then(() => showFlag(d.tabId, d.url));
+  await settingsReady;
+  if (!settings.showFlag || !d.ip) return;  // no ip (cache): showFlag looks it up once the page is shown
+  await rememberServer(d.tabId, d.url, d.ip);
+  showFlag(d.tabId, d.url);
 }, { urls: ['http://*/*', 'https://*/*'], types: ['main_frame'] });
 
 browser.tabs.onUpdated.addListener((tabId, change, tab) => {
-  if (change.url || change.status === 'complete') showFlag(tabId, tab.url);
+  if (!tab.discarded && (change.url || change.status === 'complete')) showFlag(tabId, tab.url);
 });
 browser.tabs.onRemoved.addListener((tabId) => browser.storage.session.remove(FLAG_KEY(tabId)));
 
@@ -144,31 +147,43 @@ async function chromeHeaders() {
   ];
 }
 
-const matchesFor = (hosts) => hosts.map((h) => `*://${h}/*`);
+// Only plain domain names (no IP addresses or ports) are used for per-site rules.
+const validHost = (h) => /^[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(h) && !/^\d+(\.\d+){3}$/.test(h);
+// The host and its subdomains, to match the DNR rules (requestDomains also covers subdomains).
+const matchesFor = (hosts) => hosts.flatMap((h) => [`*://${h}/*`, `*://*.${h}/*`]);
+
+async function registerScript(id, hosts, options) {
+  try {
+    await browser.scripting.unregisterContentScripts({ ids: [id] });
+  } catch { /* wasn't registered */ }
+  if (hosts.length) await browser.scripting.registerContentScripts([{ id, matches: matchesFor(hosts), persistAcrossSessions: true, ...options }]);
+}
 
 async function applySites() {
-  const popupHosts = Object.keys(settings.popupSites);
-  const chromeHosts = settings.chromeSites;
-
-  const registered = (await browser.scripting.getRegisteredContentScripts()).map((s) => s.id);
-  if (registered.length) await browser.scripting.unregisterContentScripts({ ids: registered });
-  const scripts = [];
-  if (popupHosts.length) {
-    scripts.push({ id: 'popups', matches: matchesFor(popupHosts), js: ['content/popups.js'], runAt: 'document_idle', persistAcrossSessions: true });
+  const popupHosts = Object.keys(settings.popupSites).filter(validHost);
+  const chromeHosts = settings.chromeSites.filter(validHost);
+  const steps = [
+    () => registerScript('popups', popupHosts, { js: ['content/popups.js'], runAt: 'document_idle' }),
+    () => registerScript('chrome-mask', chromeHosts, {
+      js: ['content/chrome-mask.js'], runAt: 'document_start', allFrames: true, matchOriginAsFallback: true, world: 'MAIN',
+    }),
+    async () => {
+      const old = (await browser.declarativeNetRequest.getDynamicRules()).map((r) => r.id);
+      const rules = [];
+      if (chromeHosts.length) {
+        const action = { type: 'modifyHeaders', requestHeaders: await chromeHeaders() };
+        rules.push({ id: 1, priority: 1, action, condition: { requestDomains: chromeHosts, resourceTypes: ALL_TYPES } });
+        // Requests the site makes to other servers, but not pages you open from it.
+        const sub = ALL_TYPES.filter((t) => t !== 'main_frame' && t !== 'sub_frame');
+        rules.push({ id: 2, priority: 1, action, condition: { initiatorDomains: chromeHosts, resourceTypes: sub } });
+      }
+      await browser.declarativeNetRequest.updateDynamicRules({ removeRuleIds: old, addRules: rules });
+    },
+  ];
+  // Each step on its own, so one failure doesn't leave the others half done.
+  for (const step of steps) {
+    try { await step(); } catch (e) { console.error('More Settings for Firefox:', e); }
   }
-  if (chromeHosts.length) {
-    scripts.push({ id: 'chrome-mask', matches: matchesFor(chromeHosts), js: ['content/chrome-mask.js'], runAt: 'document_start', allFrames: true, world: 'MAIN', persistAcrossSessions: true });
-  }
-  if (scripts.length) await browser.scripting.registerContentScripts(scripts);
-
-  const old = (await browser.declarativeNetRequest.getDynamicRules()).map((r) => r.id);
-  const rules = [];
-  if (chromeHosts.length) {
-    const action = { type: 'modifyHeaders', requestHeaders: await chromeHeaders() };
-    rules.push({ id: 1, priority: 1, action, condition: { requestDomains: chromeHosts, resourceTypes: ALL_TYPES } });
-    rules.push({ id: 2, priority: 1, action, condition: { initiatorDomains: chromeHosts, resourceTypes: ALL_TYPES } });
-  }
-  await browser.declarativeNetRequest.updateDynamicRules({ removeRuleIds: old, addRules: rules });
 }
 
 // ---------- Tabs: duplicate (Alt+Shift+D), duplicate to a new window, move to a new window, new tab to the right ----------
@@ -179,13 +194,19 @@ async function selectedTabs() {
 async function duplicateTabs() {
   await settingsReady;
   const tabs = await selectedTabs();
-  const last = tabs[tabs.length - 1];
-  let index = last.index + 1;
+  // Unpinned copies go after the last selected tab, in order. Pinned copies stay with the pinned tabs.
+  let anchor = tabs.filter((t) => !t.pinned).at(-1)?.id;
   let firstCopy = null, activeCopy = null;
   for (const tab of tabs) {
-    const copy = await browser.tabs.duplicate(tab.id, tab.pinned ? { active: false } : { index, active: false });
-    if (tab.pinned) await browser.tabs.update(copy.id, { pinned: true });
-    else index++;
+    let copy;
+    if (tab.pinned) {
+      copy = await browser.tabs.duplicate(tab.id, { active: false });
+      await browser.tabs.update(copy.id, { pinned: true });
+    } else {
+      const index = (await browser.tabs.get(anchor)).index + 1;
+      copy = await browser.tabs.duplicate(tab.id, { index, active: false });
+      anchor = copy.id;
+    }
     firstCopy ??= copy;
     if (tab.active) activeCopy = copy;
   }
@@ -219,6 +240,15 @@ const TAB_COMMANDS = {
 browser.commands.onCommand.addListener((command) => TAB_COMMANDS[command]?.());
 browser.runtime.onMessage.addListener((msg) => {
   if (msg?.type === 'tabCommand' && TAB_COMMANDS[msg.command]) return TAB_COMMANDS[msg.command]().then(() => true);
+  // Popup: save per-site lists and wait until the rules are in place (so a reload uses them).
+  if (msg?.type === 'saveSites') {
+    return settingsReady.then(async () => {
+      await browser.storage.local.set(msg.changes);
+      Object.assign(settings, msg.changes);
+      await applyAll(['sites']);
+      return true;
+    });
+  }
 });
 
 // ---------- Apply everything ----------
@@ -244,7 +274,7 @@ browser.storage.onChanged.addListener((changes, area) => {
     if ('cleanLinkMenu' in changes) parts.push('menu');
     if (parts.length) applyAll(parts);
     if ('showFlag' in changes) {
-      browser.tabs.query({}).then((tabs) => tabs.forEach((t) => showFlag(t.id, t.url)));
+      browser.tabs.query({ discarded: false }).then((tabs) => tabs.forEach((t) => showFlag(t.id, t.url)));
     }
   });
 });

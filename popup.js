@@ -82,7 +82,7 @@ function sitePanel() {
     const sites = { ...current.popupSites };
     if (lvl) sites[host] = lvl; else delete sites[host];
     current.popupSites = sites;
-    save({ popupSites: sites });
+    return browser.runtime.sendMessage({ type: 'saveSites', changes: { popupSites: sites } });
   };
   const all = checkRow({
     label: 'Also unstick headers and bars',
@@ -95,8 +95,12 @@ function sitePanel() {
     get: () => !!level(),
     set: (on) => {
       setLevel(on ? (all.input.checked ? 'all' : 'popups') : null);
-      if (on) cleanNow();
-      else status.textContent = 'Off. Reload the page to bring back anything hidden.';
+      if (on) {
+        cleanNow();
+      } else {
+        browser.scripting.executeScript({ target: { tabId: tab.id }, func: () => window.msfPopups?.stop() }).catch(() => {});
+        status.textContent = 'Off. Reload the page to bring back anything hidden.';
+      }
     },
   });
   async function cleanNow() {
@@ -128,9 +132,9 @@ function sitePanel() {
         const sites = current.chromeSites.filter((s) => s !== host);
         if (on) sites.push(host);
         current.chromeSites = sites;
-        await save({ chromeSites: sites });
         chromeStatus.textContent = on ? 'Reloading as Chrome…' : 'Reloading as Firefox…';
-        setTimeout(() => browser.tabs.reload(tab.id, { bypassCache: true }), 400);
+        await browser.runtime.sendMessage({ type: 'saveSites', changes: { chromeSites: sites } });
+        browser.tabs.reload(tab.id, { bypassCache: true });
       },
     }),
     chromeStatus);
@@ -143,8 +147,11 @@ function sitePanel() {
       onclick: async (e) => {
         e.target.disabled = true;
         try {
+          // The site's main domain: example.com for www.example.com, bbc.co.uk for www.bbc.co.uk. IP addresses stay as they are.
           const parts = host.split('.');
-          const base = parts.length > 2 && !/^(co|com|net|org|gov|edu|ac)$/.test(parts.at(-2)) ? parts.slice(-2).join('.') : parts.slice(-3).join('.');
+          const ip = /^[\d.]+$/.test(host) || host.includes(':');
+          const twoPart = parts.length > 2 && parts.at(-1).length === 2 && parts.at(-2).length <= 3;
+          const base = ip ? host : parts.slice(twoPart ? -3 : -2).join('.');
           await browser.browsingData.remove({ hostnames: [...new Set([host, base])] },
             { cookies: true, localStorage: true, indexedDB: true, serviceWorkers: true });
           forgetStatus.textContent = `Forgot ${base}.`;

@@ -24,8 +24,10 @@
   getter(nav, 'appVersion', ua.replace('Mozilla/', ''));
   getter(nav, 'vendor', 'Google Inc.');
   getter(nav, 'platform', mac ? 'MacIntel' : 'Win32');
-  getter(nav, 'oscpu', undefined);
-  getter(nav, 'buildID', undefined);
+  // Firefox-only properties: Chrome doesn't have them at all.
+  for (const name of ['oscpu', 'buildID']) {
+    try { delete nav[name]; } catch { /* locked */ }
+  }
   getter(nav, 'productSub', '20030107');
 
   const uaData = {

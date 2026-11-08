@@ -39,8 +39,8 @@
     if (cs.position !== 'fixed' && cs.position !== 'sticky') return;
     if (cs.display === 'none' || cs.visibility === 'hidden' || Number(cs.opacity) === 0) return;
     if (document.fullscreenElement && (el.contains(document.fullscreenElement) || document.fullscreenElement.contains(el))) return;
-    // Something that appeared right after you clicked is probably a menu or dialog you opened.
-    if (Date.now() - lastUserAction < 1500) return;
+    // Something that appeared soon after you clicked or typed is probably a menu or dialog you opened.
+    if (Date.now() - lastUserAction < 4000) return;
 
     const r = el.getBoundingClientRect();
     const area = visibleArea(r);
@@ -55,11 +55,21 @@
       return;
     }
 
-    const big = area >= screen * 0.25;
+    // Never hide something that holds the page itself (apps, editors and maps often use a fixed full-screen root).
+    if (el.querySelector('main, article, [role="main"]')) return;
+    const bodyText = document.body.innerText.length;
+    const ownText = (el.innerText || '').length;
+    if (bodyText > 500 && ownText > bodyText * 0.5) return;
+
     const named = WORDS.test(`${el.id} ${el.className} ${el.getAttribute('role') || ''} ${el.getAttribute('aria-label') || ''}`);
     // A slim bar along the top is usually the site's header, which often has a Subscribe or Sign up link.
     const header = r.top <= 2 && r.height < 130;
-    const text = !big && !header && (el.innerText || '').length < 2000 && TEXT.test(el.innerText || '');
+    const text = !header && ownText < 2000 && TEXT.test(el.innerText || '');
+    // A big overlay counts only if it looks like a backdrop (see-through or nearly empty) or says it's a pop-up.
+    const bg = cs.backgroundColor.match(/rgba?\(([^)]+)\)/);
+    const alpha = bg ? Number(bg[1].split(',')[3] ?? 1) : 1;
+    const backdrop = (alpha > 0 && alpha < 1) || Number(cs.opacity) < 1 || ownText < 400;
+    const big = area >= screen * 0.25 && (backdrop || named || text);
 
     if (big || named || text) {
       hide(el);
@@ -133,9 +143,10 @@
   }
 
   function start(newLevel, keepWatching) {
+    const firstWatch = keepWatching && !observer;
     level = newLevel;
     scanAll();
-    if (keepWatching) {
+    if (firstWatch) {
       watch();
       setTimeout(scanAll, 1500);
       setTimeout(scanAll, 4000);
@@ -143,13 +154,29 @@
     return hidden;
   }
 
+  function stop() {
+    level = null;
+    observer?.disconnect();
+    observer = null;
+  }
+
+  // The site's entry, or its parent domain's (pop-up removal for example.com also covers www.example.com).
+  function siteLevel(sites) {
+    const parts = location.hostname.split('.');
+    for (let i = 0; i < parts.length - 1; i++) {
+      const lvl = sites[parts.slice(i).join('.')];
+      if (lvl) return lvl;
+    }
+    return null;
+  }
+
   function boot() {
     browser.storage.local.get({ popupSites: {} }).then(({ popupSites }) => {
-      const lvl = popupSites[location.hostname];
+      const lvl = siteLevel(popupSites);
       if (lvl) start(lvl, true);
     });
   }
 
-  window.msfPopups = { start, boot, count: () => hidden };
+  window.msfPopups = { start, stop, boot, count: () => hidden };
   boot();
 })();

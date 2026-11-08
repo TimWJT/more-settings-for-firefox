@@ -22,6 +22,8 @@ The Firefox settings you wish it had, in one small add-on. Made to sit next to u
 - **Duplicate tab** with Alt+Shift+D
 - **Check-up** of Firefox's own privacy settings
 
+On install it hides your local IP from WebRTC and blocks click pings. Both are switches you can turn off.
+
 No data collected. Nothing is sent anywhere. Not affiliated with Mozilla.
 
 ## Notes for reviewers
@@ -30,6 +32,7 @@ No data collected. Nothing is sent anywhere. Not affiliated with Mozilla.
 - `<all_urls>` + `webRequestBlocking`: removes tracking parameters and redirect wrappers from top-level navigations only, and reads the server IP of top-level pages for the flag.
 - `declarativeNetRequest`: changes the User-Agent only on sites the user switches "Pretend to be Chrome" on for.
 - `dns`: finds the server IP for the flag when a page came from the cache.
+- `privacy`: on install it turns on two settings, both shown as switches in the popup and undone when switched off or when the add-on is removed: WebRTC only uses the public network interface, and `<a ping>` is off.
 
 ## Categories
 Privacy & Security, Tabs
