@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>More Settings for Firefox</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="main">
+    <header class="header">
+      <img src="icon.svg" alt="" width="46" height="46">
+      <h1>Firefox Settings</h1>
+    </header>
+
+    <div id="access" class="banner" hidden>
+      <p>Allow the add-on to work on websites so it can clean links and show flags.</p>
+      <button type="button" class="btn primary" id="grant">Allow</button>
+    </div>
+
+    <nav class="tabs" role="tablist" aria-label="Settings sections" id="tabs"></nav>
+
+    <div id="panels"></div>
+  </div>
+  <script src="settings.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

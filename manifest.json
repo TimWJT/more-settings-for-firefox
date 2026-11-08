@@ -1,0 +1,70 @@
+{
+  "manifest_version": 3,
+  "name": "More Settings for Firefox",
+  "version": "1.0.0",
+  "description": "Privacy extras Firefox and uBlock Origin don't have: clean tracking out of links, remove pop-ups per site, pretend to be Chrome, server country flag, forget a site, hidden privacy settings.",
+  "icons": {
+    "48": "icon.svg",
+    "96": "icon.svg"
+  },
+  "action": {
+    "default_icon": "icon.svg",
+    "default_popup": "popup.html",
+    "default_title": "More Settings for Firefox"
+  },
+  "page_action": {
+    "default_title": "Server location",
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "scripts": [
+      "settings.js",
+      "lib/links.js",
+      "lib/ipdb.js",
+      "background.js"
+    ]
+  },
+  "commands": {
+    "duplicate-tab": {
+      "suggested_key": {
+        "default": "Alt+Shift+D"
+      },
+      "description": "Duplicate the current tab"
+    },
+    "duplicate-to-new-window": {
+      "description": "Duplicate the tab into a new window"
+    },
+    "move-to-new-window": {
+      "description": "Move the tab to a new window"
+    },
+    "new-tab-to-the-right": {
+      "description": "Open a new tab to the right"
+    }
+  },
+  "permissions": [
+    "storage",
+    "privacy",
+    "scripting",
+    "declarativeNetRequest",
+    "webRequest",
+    "webRequestBlocking",
+    "browsingData",
+    "menus",
+    "clipboardWrite",
+    "dns"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "more-settings-for-firefox@timwjt",
+      "strict_min_version": "128.0",
+      "data_collection_permissions": {
+        "required": [
+          "none"
+        ]
+      }
+    }
+  }
+}
