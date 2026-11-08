@@ -11,12 +11,13 @@ Keep **uBlock Origin** for ads and trackers, and set Firefox's **Enhanced Tracki
 | Feature | Default |
 |---|---|
 | **Remove tracking from links**: utm_*, fbclid, gclid, msclkid, Mailchimp, HubSpot, Spotify/YouTube `si=` and about 60 more, as each page opens | on |
-| **Skip redirect links**: Google, Facebook, Instagram, Threads, YouTube, Reddit, Steam, Tumblr, Bing and DuckDuckGo go straight to the site | on |
+| **Skip redirect links**: Google, Facebook, Instagram, Threads, YouTube, Reddit, Steam, Tumblr, Bing, DuckDuckGo, LinkedIn and Slack go straight to the site | on |
 | **Real pages instead of AMP** (Google AMP and ampproject.org links) | on |
-| **Copy clean link** in the right-click menu | on |
+| **Copy clean link** in the right-click menu, with a short note on the page saying what it removed | on |
 | **See what changed**: the toolbar icon shows a number when the add-on changed something on the page (hover for the list). The popup shows what was removed, with **Open original link** to load it as it was | on |
-| **Pause on this site**: big amber button at the top of the popup, turns the whole add-on off for one site and reloads the page as it was | – |
-| **Remove pop-ups** per site: cookie walls, sign-up boxes, dark overlays, scroll lock. Optional: also unstick headers and bars. "Clean this page once" button | off (per site) |
+| **Pause on this site**: the big On/Off switch at the top of the popup, turns the whole add-on off for one site. Open pages change straight away; a Reload page button only appears when something can't change without one (Chrome mode, a cleaned link) | – |
+| **On everywhere** button right of the title: one click turns the whole add-on off on every site (link cleaning, pop-ups, Chrome mode, privacy settings, right-click menu, shortcut). Firefox gets its own settings back | on |
+| **Remove pop-ups** per site: cookie walls, sign-up boxes, dark overlays, scroll lock. Optional: also hide bars that follow you as you scroll. "Hide pop-ups now" and "Bring them back" buttons | off (per site) |
 | **Pretend to be Chrome** per site, for sites that say Firefox isn't supported (headers and JavaScript both) | off (per site) |
 | **Hide your local IP** from WebRTC | on |
 | **Block click pings** (`<a ping>`) | on |

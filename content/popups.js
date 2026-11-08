@@ -1,4 +1,4 @@
-// Pop-up remover. Runs on sites you switched it on for, or once when you press "Clean this page once".
+// Pop-up remover. Runs on sites you switched it on for, or once when you press "Hide pop-ups now".
 // Hides overlays that float over the page (cookie walls, sign-up boxes, dark backdrops) and lets the page scroll again.
 // Level "popups": only big overlays, and cookie/newsletter boxes.
 // Level "all": also unsticks headers and hides every bar that floats over the page.
@@ -204,12 +204,23 @@
   }
 
   function boot() {
-    browser.storage.local.get({ popupSites: {}, pausedSites: [] }).then(({ popupSites, pausedSites }) => {
-      if (onList(pausedSites)) return;
+    browser.storage.local.get({ enabled: true, popupSites: {}, pausedSites: [] }).then(({ enabled, popupSites, pausedSites }) => {
+      if (!enabled || onList(pausedSites)) return;
       const lvl = onList(popupSites);
       if (lvl) start(lvl, true);
     });
   }
+
+  // Turning the add-on off (everywhere or on this site) puts hidden pop-ups back straight away, no reload.
+  // Turning it back on hides them again. A one-off "Hide pop-ups now" on an unlisted site is left alone.
+  browser.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local' || !('enabled' in changes || 'pausedSites' in changes)) return;
+    browser.storage.local.get({ enabled: true, popupSites: {}, pausedSites: [] }).then(({ enabled, popupSites, pausedSites }) => {
+      if (!enabled || onList(pausedSites)) { if (level) stop(); return; }
+      const lvl = onList(popupSites);
+      if (lvl && lvl !== level) start(lvl, true);
+    });
+  });
 
   window.msfPopups = { start, stop, boot, count: () => hidden };
   boot();

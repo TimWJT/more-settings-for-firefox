@@ -11,16 +11,27 @@
     <header class="header">
       <img src="icon.svg" alt="" width="46" height="46">
       <h1>Firefox Settings</h1>
+      <button type="button" class="power" id="power" role="switch" aria-checked="true">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5v8"/><path d="M6.6 7a7.5 7.5 0 1 0 10.8 0"/></svg>
+        <span id="power-text">On everywhere</span>
+      </button>
     </header>
 
+    <div id="off-bar" class="off-bar" hidden>
+      <span id="off-msg" role="status" aria-live="polite"></span>
+      <button type="button" class="btn primary reload-btn" id="off-reload" hidden>Reload page</button>
+    </div>
+
     <div id="access" class="banner" hidden>
-      <p>Allow the add-on to work on websites so it can clean links and show flags.</p>
+      <p>Allow the add-on to work on websites so it can clean links and hide pop-ups.</p>
       <button type="button" class="btn primary" id="grant">Allow</button>
     </div>
 
+    <div id="rest">
     <nav class="tabs" role="tablist" aria-label="Settings sections" id="tabs"></nav>
 
     <div id="panels"></div>
+    </div>
   </div>
   <script src="settings.js"></script>
   <script src="popup.js"></script>

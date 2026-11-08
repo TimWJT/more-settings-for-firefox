@@ -74,6 +74,13 @@ Since then Firefox has built most of it in:
 - **Cons:** very rarely a site needs one of those bits (for example, some discount links).
 - **You'll always know:** when a link is cleaned, the add-on's icon shows a **1**. Hover it to see what was removed, or open the popup and press **Open original link** to load it exactly as it was.
 
+### Copy clean link
+- **How:** right-click a link › **Copy clean link**. A small note appears in the corner saying what was removed ("Removed utm_source"), or that the link had nothing to remove.
+- **Why the note:** a shared link that behaves differently (say, a discount code that was in a tracking bit) is less confusing when you saw what was taken out.
+
+### Outlook and Teams "safe links" (left alone on purpose)
+- Links in uni or work email go through Microsoft first (`safelinks.protection.outlook.com`). That stop re-checks the link for phishing at the moment you click, can block scams aimed at your uni, and lets IT help if you click a bad one. The add-on doesn't skip it, because that protection is worth more than the second it costs.
+
 ### Remove pop-ups (per site)
 - **How:** on sites you turn it on for, it looks for boxes that float over the page (cookie walls, "sign up!" boxes, dark see-through backdrops), hides them, and lets the page scroll again. It skips anything you opened yourself in the last few seconds, and anything that holds the page's main content.
 - **Why:** some sites block the whole page until you click a banner.
@@ -102,7 +109,8 @@ Since then Firefox has built most of it in:
 
 ### Seeing what it did, and turning it off
 - **The number on the icon** counts what the add-on changed on the current page (a cleaned link, pop-up remover, Chrome mode). No number means it did nothing there.
-- **Pause on this site** (the big amber button at the top of the popup) turns the whole add-on off for that site. The icon then says **off**.
+- **Pause on this site** (the big On/Off switch at the top of the popup) turns the whole add-on off for that site. The icon then says **off**.
+- **On everywhere** (the pill right of the title) turns the whole add-on off on every site, and hands the privacy settings back to Firefox. Click it again to turn everything back on.
 - **Something broken?** at the bottom of the popup lists the three things to check, in order: this add-on, uBlock Origin's power button, Firefox's shield icon.
 
 ### Left out on purpose

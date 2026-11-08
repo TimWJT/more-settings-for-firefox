@@ -60,19 +60,70 @@ function activityRow(mark, name, detail, ...extra) {
     ...extra);
 }
 
+// ---------- Turning the add-on off and on ----------
+// Pop-ups, privacy settings, the menu and the shortcut change straight away. Only Chrome mode and a cleaned link
+// can't change without loading the page again, so the background says whether this page needs a reload.
+const reloadNeeded = (active) => (host
+  ? browser.runtime.sendMessage({ type: 'reloadNeeded', tabId: tab.id, url: tab.url, active }).catch(() => false)
+  : Promise.resolve(false));
+async function reloadTab(active) {
+  // Turned off on a page whose link was cleaned: load the original link, not the cleaned one again.
+  const key = `act${tab.id}`;
+  const act = (await browser.storage.session.get(key))[key];
+  if (!active && act?.page === tab.url) await browser.runtime.sendMessage({ type: 'openOriginal', tabId: tab.id });
+  else await browser.tabs.reload(tab.id);
+}
+
 // ---------- This site ----------
 function sitePanel() {
   if (!host) {
     return [wide(null, note('Open a website to see what this add-on does there.'))];
   }
 
-  // What this add-on changed on the page, with undo
+  // A message plus "Reload page" button, shown after a change that only takes effect on reload.
+  // Nothing reloads by itself, so an accidental click can just be flipped back.
+  function reloadBar(reload) {
+    const msg = h('span', { class: 'reload-msg', role: 'status', 'aria-live': 'polite' });
+    const btn = h('button', {
+      type: 'button', class: 'btn primary reload-btn',
+      onclick: async (e) => { e.currentTarget.disabled = true; await reload(); window.close(); },
+    }, 'Reload page');
+    const el = h('div', { class: 'reload-bar', hidden: true }, msg, btn);
+    el.show = (text) => { msg.textContent = text || ''; el.hidden = !text; };
+    return el;
+  }
+
+  // ----- Top card: site name, giant on/off switch, and what the add-on changed on this page -----
+  // Knob right + green = on, knob left + grey = off (like every other switch).
+  const startPaused = onList(current.pausedSites);
+  let paused = startPaused;
+  const label = (off) => (off ? 'Off for this site' : 'On for this site');
+  const text = h('span', { class: 'big-text' }, label(paused));
+  const siteReload = reloadBar(() => reloadTab(!paused));
   const list = h('div', { class: 'checkup' });
+  const bigSwitch = h('button', {
+    type: 'button', role: 'switch', class: 'big-switch', 'aria-checked': String(!paused),
+    'aria-label': `This add-on on ${host}`,
+    onclick: async (e) => {
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      paused = !paused;
+      btn.setAttribute('aria-checked', String(!paused));
+      text.textContent = label(paused);
+      const sites = current.pausedSites.filter((s) => !covers(s));
+      if (paused) sites.push(host);
+      current.pausedSites = sites;
+      await browser.runtime.sendMessage({ type: 'saveSites', changes: { pausedSites: sites } });
+      // Only ask for a reload when something on this page can't change without one.
+      const reload = paused !== startPaused && await reloadNeeded(!paused);
+      siteReload.show(!reload ? '' : paused ? 'Reload to finish turning it off.' : 'Reload to finish turning it on.');
+      list.hidden = paused !== startPaused;
+      btn.disabled = false;
+    },
+  }, text, h('span', { class: 'knob', 'aria-hidden': 'true' }));
+
   (async () => {
-    if (onList(current.pausedSites)) {
-      list.append(activityRow('–', 'Nothing changed on this page', 'Paused here.'));
-      return;
-    }
+    if (paused) { list.hidden = true; return; }
     const key = `act${tab.id}`;
     const act = (await browser.storage.session.get(key))[key];
     if (act?.page && act.page === tab.url) {
@@ -86,41 +137,17 @@ function sitePanel() {
       const what = Array.isArray(act.notes) ? act.notes.join('. ') + '.' : 'Tracking was removed from the address.';
       list.append(activityRow('✓', 'Link cleaned', what, h('span'), open));
     }
-    if (onList(Object.keys(current.popupSites))) list.append(activityRow('✓', 'Pop-up remover is on', 'Set below.'));
-    if (onList(current.chromeSites)) list.append(activityRow('✓', 'Pretending to be Chrome', 'Set below.'));
-    if (!list.children.length) {
-      list.append(activityRow('–', 'Nothing changed on this page', 'If it looks broken, it isn\'t this add-on. See "Something broken?"'));
-    }
+    if (!list.children.length) list.append(h('p', { class: 'nothing' }, 'Nothing changed on this page.'));
   })();
-  // The big Pause button: the first thing to press when a site looks broken.
-  const paused = onList(current.pausedSites);
-  const pause = h('button', {
-    type: 'button', class: 'pause' + (paused ? ' paused' : ''), 'aria-pressed': String(paused),
-    onclick: async (e) => {
-      e.currentTarget.disabled = true;
-      const on = !paused;
-      const sites = current.pausedSites.filter((s) => !covers(s));
-      if (on) sites.push(host);
-      current.pausedSites = sites;
-      await browser.runtime.sendMessage({ type: 'saveSites', changes: { pausedSites: sites } });
-      // If the link to this page was cleaned, reload the original link, not the cleaned one.
-      const key = `act${tab.id}`;
-      const act = (await browser.storage.session.get(key))[key];
-      if (on && act?.page === tab.url) await browser.runtime.sendMessage({ type: 'openOriginal', tabId: tab.id });
-      else browser.tabs.reload(tab.id);
-      window.close();
-    },
-  },
-  h('span', { class: 'pause-icon', 'aria-hidden': 'true' }, paused ? '▶' : '❚❚'),
-  h('span', { class: 'pause-text' },
-    h('span', { class: 'pause-title' }, paused ? 'Resume on this site' : 'Pause on this site'),
-    h('span', { class: 'pause-sub' }, paused
-      ? `Paused on ${matchOf(current.pausedSites)}. This add-on changes nothing here.`
-      : 'Site looks broken? Turn this add-on off here. The page reloads as it was.')));
-  const activity = wide('On this page', list);
 
-  // Pop-ups
-  const status = note('Hides cookie walls, sign-up boxes and dark overlays. Off until you turn it on for a site.');
+  const top = h('section', { class: 'site', 'aria-label': 'This site' },
+    h('p', { class: 'site-name' }, paused ? matchOf(current.pausedSites) : host),
+    bigSwitch,
+    siteReload,
+    list);
+
+  // ----- Pop-ups -----
+  const status = note('');
   const popupEntry = () => matchOf(Object.keys(current.popupSites));
   const level = () => current.popupSites[popupEntry()] || null;
   const setLevel = (lvl) => {
@@ -130,8 +157,9 @@ function sitePanel() {
     current.popupSites = sites;
     return browser.runtime.sendMessage({ type: 'saveSites', changes: { popupSites: sites } });
   };
+  const runOnPage = (func, ...args) => browser.scripting.executeScript({ target: { tabId: tab.id }, func, args });
   const all = checkRow({
-    label: 'Also unstick headers and bars',
+    label: 'Also hide bars that follow you',
     get: () => level() === 'all',
     set: async (on) => {
       if (!level()) return;
@@ -141,74 +169,71 @@ function sitePanel() {
   });
   all.input.disabled = !level();
   const popupSwitch = switchRow({
-    label: 'Remove pop-ups here',
-    hint: `Every time you open ${popupEntry() || host}`,
+    label: 'Hide pop-ups',
+    hint: 'Cookie banners, sign-up boxes and dark overlays, every time',
     get: () => !!level(),
     set: async (on) => {
       await setLevel(on ? (all.input.checked ? 'all' : 'popups') : null);
       all.input.disabled = !on;
-      if (on) cleanNow();
-      else showAgain('Off.');
+      if (on) hideNow();
+      else undo();
     },
   });
-  const runOnPage = (func, ...args) => browser.scripting.executeScript({ target: { tabId: tab.id }, func, args });
-  async function cleanNow() {
+  async function hideNow() {
     try {
       await browser.scripting.executeScript({ target: { tabId: tab.id }, files: ['content/popups.js'] });
       const [res] = await runOnPage((lvl) => window.msfPopups.start(lvl, true), all.input.checked ? 'all' : 'popups');
       const n = res?.result || 0;
-      status.textContent = n ? `Hid ${n} pop-up${n === 1 ? '' : 's'}. "Show them again" puts them back.` : 'Nothing to hide right now. It keeps watching.';
+      status.textContent = n ? `Hid ${n}.` : 'Nothing to hide yet.';
     } catch {
-      status.textContent = 'Firefox doesn\'t let add-ons change this page.';
+      status.textContent = 'Firefox blocks add-ons on this page.';
     }
   }
-  async function showAgain(prefix = '') {
+  async function undo() {
     try {
       const [res] = await runOnPage(() => window.msfPopups?.stop() ?? 0);
       const n = res?.result || 0;
-      status.textContent = `${prefix} ${n ? `Showed ${n} hidden thing${n === 1 ? '' : 's'} again.` : 'Nothing was hidden on this page.'}`.trim();
+      status.textContent = n ? `Brought back ${n}.` : 'Nothing was hidden.';
     } catch {
-      status.textContent = `${prefix} Reload the page to bring back anything hidden.`.trim();
+      status.textContent = 'Reload the page to bring them back.';
     }
   }
-  const popupControls = siteOk()
-    ? [popupSwitch, h('div', { class: 'checks' }, all)]
-    : [note('Only the button works here: per-site settings need a normal web address.')];
-  const popups = card('Pop-ups', ...popupControls,
-    h('div', { class: 'buttons two' },
-      h('button', { type: 'button', class: 'btn secondary', onclick: cleanNow }, 'Clean this page once'),
-      h('button', { type: 'button', class: 'btn secondary', onclick: () => showAgain() }, 'Show them again')),
+  const popups = wide('Pop-ups',
+    ...(siteOk() ? [popupSwitch, h('div', { class: 'checks' }, all)] : []),
+    h('div', { class: 'buttons pair' },
+      h('button', { type: 'button', class: 'btn secondary', onclick: hideNow }, 'Hide pop-ups now'),
+      h('button', { type: 'button', class: 'btn secondary', onclick: undo }, 'Bring them back')),
     status);
 
-  // Compatibility
-  const chromeStatus = note(siteOk()
-    ? 'Only for sites that say Firefox isn\'t supported. The page reloads.'
-    : 'Needs a normal web address, not an IP address or a name like "localhost".');
-  const chrome = card('Compatibility',
-    siteOk() ? switchRow({
-      label: 'Pretend to be Chrome',
-      hint: `Only on ${matchOf(current.chromeSites) || host}`,
-      get: () => onList(current.chromeSites),
-      set: async (on) => {
-        const sites = current.chromeSites.filter((s) => !covers(s));
-        if (on) sites.push(host);
-        current.chromeSites = sites;
-        chromeStatus.textContent = on ? 'Reloading as Chrome…' : 'Reloading as Firefox…';
-        await browser.runtime.sendMessage({ type: 'saveSites', changes: { chromeSites: sites } });
-        browser.tabs.reload(tab.id, { bypassCache: true });
-      },
-    }) : null,
-    chromeStatus);
+  // ----- Compatibility: for sites that refuse to work in Firefox -----
+  const startChrome = onList(current.chromeSites);
+  const chromeReload = reloadBar(() => browser.tabs.reload(tab.id, { bypassCache: true }));
+  const chrome = wide('Site blocks Firefox?',
+    ...(siteOk() ? [
+      switchRow({
+        label: 'Pretend to be Chrome',
+        hint: 'Only if it says Firefox isn\'t supported',
+        get: () => startChrome,
+        set: async (on) => {
+          const sites = current.chromeSites.filter((s) => !covers(s));
+          if (on) sites.push(host);
+          current.chromeSites = sites;
+          await browser.runtime.sendMessage({ type: 'saveSites', changes: { chromeSites: sites } });
+          chromeReload.show(on === startChrome ? '' : on ? 'Reload to open it as Chrome.' : 'Reload to open it as Firefox again.');
+        },
+      }),
+      chromeReload,
+    ] : [note('Needs a normal web address.')]));
 
   // What to do when a site breaks
   const broken = wide('Something broken?',
     h('ol', { class: 'steps' },
-      h('li', {}, h('b', {}, 'This add-on: '), 'the number on its icon shows what it changed. Use "Open original link" or "Pause on this site" above.'),
-      h('li', {}, h('b', {}, 'uBlock Origin: '), 'click its icon, then the big power button to turn it off for this site.'),
-      h('li', {}, h('b', {}, 'Firefox: '), 'click the shield left of the address bar and turn off Enhanced Tracking Protection for this site.')),
-    note('Try them in that order and reload after each one. Whatever fixes it was the cause.'));
+      h('li', {}, h('b', {}, 'This add-on: '), 'turn the big switch at the top to Off, then reload.'),
+      h('li', {}, h('b', {}, 'uBlock Origin: '), 'click its icon, then its big power button.'),
+      h('li', {}, h('b', {}, 'Firefox: '), 'click the shield left of the address bar and turn protection off for this site.')),
+    note('Reload after each one. Whatever fixes it was the cause.'));
 
-  return [pause, activity, popups, chrome, broken];
+  return [top, popups, chrome, broken];
 }
 
 // ---------- Links ----------
@@ -414,6 +439,40 @@ function render() {
   selectTab(TABS.some((t) => t.id === start) ? start : TABS[0].id);
 }
 
+// "On everywhere" button in the header: turns the whole add-on off for every site.
+// Nothing reloads by itself; a Reload page button appears for the page you're on.
+function setupPower() {
+  const startOn = current.enabled !== false;
+  const pausedHere = !!host && onList(current.pausedSites);
+  let reload = false;
+  const show = (on) => {
+    $('power').setAttribute('aria-checked', String(on));
+    $('power-text').textContent = on ? 'On everywhere' : 'Off everywhere';
+    document.body.classList.toggle('off', !on);
+    $('rest').inert = !on;
+    $('off-msg').textContent = on
+      ? (reload ? 'Reload to finish turning it on.' : '')
+      : 'Off everywhere. Nothing is changed on any site.' + (reload ? ' Reload to finish turning it off.' : '');
+    $('off-reload').hidden = !reload;
+    $('off-bar').hidden = !$('off-msg').textContent;
+  };
+  show(startOn);
+  $('power').addEventListener('click', async () => {
+    const on = current.enabled === false;
+    current.enabled = on;
+    reload = false;
+    show(on);
+    await save({ enabled: on });
+    // Paused on this site anyway: the page doesn't change either way.
+    if (on !== startOn && !pausedHere) { reload = await reloadNeeded(on); show(on); }
+  });
+  $('off-reload').addEventListener('click', async (e) => {
+    e.currentTarget.disabled = true;
+    await reloadTab(current.enabled !== false);
+    window.close();
+  });
+}
+
 async function checkAccess() {
   const all = { origins: ['<all_urls>'] };
   if (await browser.permissions.contains(all)) return;
@@ -433,5 +492,6 @@ async function checkAccess() {
     if (u.protocol === 'http:' || u.protocol === 'https:') host = u.hostname;
   } catch { /* about: pages */ }
   render();
+  setupPower();
   checkAccess();
 })();

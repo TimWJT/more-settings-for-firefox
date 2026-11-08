@@ -1,5 +1,6 @@
 // Default settings, shared by background.js, popup.js and the content scripts.
 const MSF_DEFAULTS = {
+  enabled: true,  // the "On everywhere" button: false turns the whole add-on off
   // Links
   cleanParams: true,
   unwrapRedirects: true,

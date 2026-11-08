@@ -9,7 +9,8 @@ const settingsReady = browser.storage.local.get(MSF_DEFAULTS).then((s) => (setti
 // True when host is one of the sites in the list, or a subdomain of one.
 const onSite = (sites, host) => !!host && sites.some((s) => host === s || host.endsWith('.' + s));
 const hostOf = (url) => { try { return new URL(url).hostname; } catch { return ''; } };
-const isPaused = (host) => onSite(settings.pausedSites, host);
+// Off everywhere (the popup's power button) counts as paused on every site.
+const isPaused = (host) => !settings.enabled || onSite(settings.pausedSites, host);
 
 // ---------- Links: clean tracking out of every page you open ----------
 // What was cleaned is kept per tab (storage.session "act<tabId>") so the badge and the popup can show it.
@@ -55,14 +56,44 @@ async function cleanNavigation(details) {
 }
 browser.webRequest.onBeforeRequest.addListener(cleanNavigation, { urls: ['http://*/*', 'https://*/*'], types: ['main_frame'] }, ['blocking']);
 
-browser.menus.onClicked.addListener(async (info) => {
+browser.menus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId !== 'copy-clean-link' || !info.linkUrl) return;
-  await navigator.clipboard.writeText(msfCleanFully(info.linkUrl));
+  const { url, notes } = msfCleanFullyWithNotes(info.linkUrl);
+  let ok = true;
+  try { await navigator.clipboard.writeText(url); } catch { ok = false; }
+  // Always say what happened, so a link that works differently once shared isn't a mystery.
+  const title = !ok ? "Couldn't copy the link" : notes.length ? 'Copied clean link' : 'Copied link';
+  const detail = !ok ? 'Try again.' : notes.length ? notes.join('. ') + '.' : 'It had no tracking to remove.';
+  if (tab?.id >= 0) browser.scripting.executeScript({ target: { tabId: tab.id }, func: showCopyToast, args: [title, detail] }).catch(() => {});
 });
+
+// A small note in the corner of the page for 4 seconds. Runs inside the page, in its own shadow root so the
+// site's styles can't change it.
+function showCopyToast(title, detail) {
+  document.getElementById('msf-copy-toast')?.remove();
+  const host = document.createElement('div');
+  host.id = 'msf-copy-toast';
+  const root = host.attachShadow({ mode: 'closed' });
+  const box = document.createElement('div');
+  box.setAttribute('role', 'status');
+  box.style.cssText = 'position:fixed;z-index:2147483647;right:16px;bottom:16px;max-width:340px;padding:12px 16px;'
+    + 'border-radius:14px;background:#1f1f1f;color:#ececec;box-shadow:0 6px 24px #0008;font:14px/1.35 system-ui,sans-serif;'
+    + 'transition:opacity .2s ease-out';
+  const b = document.createElement('b');
+  b.textContent = '✓ ' + title;
+  b.style.cssText = 'display:block;color:#8dd28d;font-weight:700';
+  const p = document.createElement('div');
+  p.textContent = detail;
+  p.style.cssText = 'margin-top:2px;color:#a8a8a8;font-size:12.5px';
+  box.append(b, p);
+  root.append(box);
+  document.documentElement.append(host);
+  setTimeout(() => { box.style.opacity = '0'; setTimeout(() => host.remove(), 200); }, 4000);
+}
 
 function updateMenu() {
   browser.menus.remove('copy-clean-link').catch(() => {}).finally(() => {
-    if (!settings.cleanLinkMenu) return;
+    if (!settings.enabled || !settings.cleanLinkMenu) return;
     browser.menus.create({ id: 'copy-clean-link', title: 'Copy clean link', contexts: ['link'] }, () => void browser.runtime.lastError);
   });
 }
@@ -83,7 +114,9 @@ async function pageActivity(tabId, url) {
 
 async function updateBadge(tabId, url) {
   const { paused, items } = await pageActivity(tabId, url);
-  const title = paused
+  const title = !settings.enabled
+    ? 'More Settings for Firefox: off everywhere'
+    : paused
     ? 'More Settings for Firefox: paused on this site'
     : items.length ? `More Settings for Firefox:\n• ${items.join('\n• ')}` : 'More Settings for Firefox: nothing changed on this page';
   try {
@@ -117,7 +150,8 @@ const updateAllBadges = () => browser.tabs.query({ discarded: false }).then((tab
 // ---------- Firefox privacy settings ----------
 async function applyPrivacy() {
   const p = browser.privacy;
-  const set = (setting, on, value) => (on ? setting.set({ value }) : setting.clear({})).catch((e) => console.warn(e));
+  // Off everywhere: hand every setting back to Firefox.
+  const set = (setting, on, value) => (on && settings.enabled ? setting.set({ value }) : setting.clear({})).catch((e) => console.warn(e));
   await Promise.all([
     set(p.network.webRTCIPHandlingPolicy, settings.webrtcProtect, 'default_public_interface_only'),
     set(p.websites.hyperlinkAuditingEnabled, settings.blockPing, false),
@@ -170,8 +204,9 @@ async function registerScript(id, hosts, paused, options) {
 }
 
 async function applySites() {
-  const popupHosts = Object.keys(settings.popupSites).filter(validHost);
-  const chromeHosts = settings.chromeSites.filter(validHost);
+  // Off everywhere: no scripts, no header rules.
+  const popupHosts = settings.enabled ? Object.keys(settings.popupSites).filter(validHost) : [];
+  const chromeHosts = settings.enabled ? settings.chromeSites.filter(validHost) : [];
   // Paused sites get nothing, even when the setting is on for their parent domain (pause shop.example.com, keep example.com).
   const paused = settings.pausedSites.filter(validHost);
   const steps = [
@@ -190,7 +225,7 @@ async function applySites() {
         const sub = ALL_TYPES.filter((t) => t !== 'main_frame' && t !== 'sub_frame');
         rules.push({ id: 2, priority: 1, action, condition: { initiatorDomains: chromeHosts, resourceTypes: sub, ...skip } });
       }
-      const key = (list) => JSON.stringify(list.map((r) => [r.id, r.condition, r.action]));
+      const key = (list) => JSON.stringify([...list].sort((a, b) => a.id - b.id).map((r) => [r.id, r.priority, r.condition, r.action]));
       if (key(old) === key(rules)) return;
       await browser.declarativeNetRequest.updateDynamicRules({ removeRuleIds: old.map((r) => r.id), addRules: rules });
     },
@@ -201,6 +236,19 @@ async function applySites() {
   }
 }
 
+// Turned back on: open tabs on pop-up sites that never loaded the remover (opened while it was off) get it now.
+// Tabs that already have it update themselves (content/popups.js listens for the change).
+async function wakePopupTabs() {
+  if (!settings.enabled) return;
+  const sites = Object.keys(settings.popupSites).filter(validHost);
+  if (!sites.length) return;
+  const tabs = await browser.tabs.query({ url: matchesFor(sites), discarded: false });
+  for (const t of tabs) {
+    if (isPaused(hostOf(t.url))) continue;
+    browser.scripting.executeScript({ target: { tabId: t.id }, files: ['content/popups.js'] }).catch(() => {});
+  }
+}
+
 // ---------- Tabs: duplicate with a keyboard shortcut (Alt+Shift+D unless changed in the popup) ----------
 async function selectedTabs() {
   return browser.tabs.query({ currentWindow: true, highlighted: true });
@@ -208,6 +256,7 @@ async function selectedTabs() {
 
 async function duplicateTabs() {
   await settingsReady;
+  if (!settings.enabled) return;
   const tabs = await selectedTabs();
   // Unpinned copies go after the last selected tab, in order. Pinned copies stay with the pinned tabs.
   let anchor = tabs.filter((t) => !t.pinned).at(-1)?.id;
@@ -244,6 +293,17 @@ browser.runtime.onMessage.addListener((msg) => {
       return true;
     });
   }
+  // Popup: after turning the add-on off or on here, can this page catch up without a reload?
+  // Chrome mode (the browser name was already sent) and link cleaning (the address already loaded) can't.
+  if (msg?.type === 'reloadNeeded') {
+    return settingsReady.then(async () => {
+      const host = hostOf(msg.url);
+      if (validHost(host) && onSite(settings.chromeSites, host)) return true;
+      if (msg.active) return !!msfCleanOnce(msg.url, settings);
+      const act = (await browser.storage.session.get(ACT_KEY(msg.tabId)))[ACT_KEY(msg.tabId)];
+      return act?.page === msg.url;
+    });
+  }
   // Popup: "Open original link" loads the address as it was, without cleaning, in that tab only.
   if (msg?.type === 'openOriginal') {
     return (async () => {
@@ -275,11 +335,12 @@ browser.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') return;
   settingsReady.then(() => {
     for (const [k, { newValue }] of Object.entries(changes)) settings[k] = newValue ?? MSF_DEFAULTS[k];
-    const parts = [];
+    const parts = 'enabled' in changes ? ['privacy', 'sites', 'menu'] : [];
     if (PRIVACY_KEYS.some((k) => k in changes)) parts.push('privacy');
     if ('popupSites' in changes || 'chromeSites' in changes || 'pausedSites' in changes) parts.push('sites');
     if ('cleanLinkMenu' in changes) parts.push('menu');
     if (parts.length) applyAll(parts).then(updateAllBadges);
+    if ('enabled' in changes || 'pausedSites' in changes) wakePopupTabs();
   });
 });
 
