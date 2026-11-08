@@ -2,7 +2,7 @@
 // The request headers are changed by a declarativeNetRequest rule; this makes the JavaScript side match.
 (() => {
   const weeks = (Date.now() - Date.UTC(2025, 5, 24)) / (7 * 864e5);
-  const v = String(138 + Math.max(0, Math.floor(weeks / 4) - 1));
+  const v = String(138 + Math.max(0, Math.floor(weeks / 5) - 1));  // same formula as chromeVersion() in background.js
   const mac = /Mac/.test(navigator.platform);
   const ua = mac
     ? `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${v}.0.0.0 Safari/537.36`
@@ -50,7 +50,9 @@
   };
   getter(nav, 'userAgentData', uaData);
 
+  // What a normal Chrome page has. No chrome.runtime: on a normal page in Chrome it's missing too,
+  // and a fake one makes sites think a Chrome extension is installed.
   if (!window.chrome) {
-    window.chrome = { app: { isInstalled: false }, csi() {}, loadTimes() {}, runtime: {} };
+    window.chrome = { app: { isInstalled: false }, csi() {}, loadTimes() {} };
   }
 })();

@@ -40,7 +40,7 @@
     "storage",
     "privacy",
     "scripting",
-    "declarativeNetRequest",
+    "declarativeNetRequestWithHostAccess",
     "webRequest",
     "webRequestBlocking",
     "menus",

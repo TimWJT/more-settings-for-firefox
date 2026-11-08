@@ -44,7 +44,13 @@ const card = (title, ...kids) => h('section', { class: 'card' }, title ? h('h2',
 const wide = (title, ...kids) => h('section', { class: 'card wide' }, title ? h('h2', {}, title) : null, ...kids);
 const note = (text, warn) => h('p', { class: 'note' + (warn ? ' warn' : ''), role: 'status', 'aria-live': 'polite' }, text);
 
-const onList = (sites) => sites.some((s) => host === s || host.endsWith('.' + s));
+// Per-site settings cover a site and its subdomains (example.com also covers www.example.com).
+// matchOf returns the entry that applies to this page; the background and content scripts use the same rule.
+const covers = (s) => host === s || host.endsWith('.' + s);
+const matchOf = (sites) => sites.find(covers) || null;
+const onList = (sites) => !!matchOf(sites);
+// Per-site rules only work on normal domain names, not IP addresses or names like "localhost".
+const siteOk = () => /^[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(host) && !/^\d+(\.\d+){3}$/.test(host);
 
 function activityRow(mark, name, detail, ...extra) {
   return h('div', { class: 'check-row' + (mark === '✓' ? ' good' : '') },
@@ -77,7 +83,8 @@ function sitePanel() {
           window.close();
         },
       }, 'Open original link');
-      list.append(activityRow('✓', 'Link cleaned', act.notes.join('. ') + '.', h('span'), open));
+      const what = Array.isArray(act.notes) ? act.notes.join('. ') + '.' : 'Tracking was removed from the address.';
+      list.append(activityRow('✓', 'Link cleaned', what, h('span'), open));
     }
     if (onList(Object.keys(current.popupSites))) list.append(activityRow('✓', 'Pop-up remover is on', 'Set below.'));
     if (onList(current.chromeSites)) list.append(activityRow('✓', 'Pretending to be Chrome', 'Set below.'));
@@ -87,14 +94,18 @@ function sitePanel() {
   })();
   const pause = switchRow({
     label: 'Pause on this site',
-    hint: 'Turns this add-on off here. The page reloads.',
+    hint: 'Turns this add-on off here. The page reloads as it was, without any changes.',
     get: () => onList(current.pausedSites),
     set: async (on) => {
-      const sites = current.pausedSites.filter((s) => !(host === s || host.endsWith('.' + s)));
+      const sites = current.pausedSites.filter((s) => !covers(s));
       if (on) sites.push(host);
       current.pausedSites = sites;
       await browser.runtime.sendMessage({ type: 'saveSites', changes: { pausedSites: sites } });
-      browser.tabs.reload(tab.id);
+      // If the link to this page was cleaned, reload the original link, not the cleaned one.
+      const key = `act${tab.id}`;
+      const act = (await browser.storage.session.get(key))[key];
+      if (on && act?.page === tab.url) await browser.runtime.sendMessage({ type: 'openOriginal', tabId: tab.id });
+      else browser.tabs.reload(tab.id);
       window.close();
     },
   });
@@ -102,66 +113,83 @@ function sitePanel() {
 
   // Pop-ups
   const status = note('Hides cookie walls, sign-up boxes and dark overlays. Off until you turn it on for a site.');
-  const level = () => current.popupSites[host];
+  const popupEntry = () => matchOf(Object.keys(current.popupSites));
+  const level = () => current.popupSites[popupEntry()] || null;
   const setLevel = (lvl) => {
     const sites = { ...current.popupSites };
-    if (lvl) sites[host] = lvl; else delete sites[host];
+    const entry = popupEntry() || host;
+    if (lvl) sites[entry] = lvl; else delete sites[entry];
     current.popupSites = sites;
     return browser.runtime.sendMessage({ type: 'saveSites', changes: { popupSites: sites } });
   };
   const all = checkRow({
     label: 'Also unstick headers and bars',
     get: () => level() === 'all',
-    set: (on) => level() && setLevel(on ? 'all' : 'popups'),
-  });
-  const popupSwitch = switchRow({
-    label: 'Remove pop-ups here',
-    hint: `Every time you open ${host}`,
-    get: () => !!level(),
-    set: (on) => {
-      setLevel(on ? (all.input.checked ? 'all' : 'popups') : null);
-      if (on) {
-        cleanNow();
-      } else {
-        browser.scripting.executeScript({ target: { tabId: tab.id }, func: () => window.msfPopups?.stop() }).catch(() => {});
-        status.textContent = 'Off. Reload the page to bring back anything hidden.';
-      }
+    set: async (on) => {
+      if (!level()) return;
+      await setLevel(on ? 'all' : 'popups');
+      runOnPage((lvl) => window.msfPopups?.start(lvl, true), on ? 'all' : 'popups');
     },
   });
+  all.input.disabled = !level();
+  const popupSwitch = switchRow({
+    label: 'Remove pop-ups here',
+    hint: `Every time you open ${popupEntry() || host}`,
+    get: () => !!level(),
+    set: async (on) => {
+      await setLevel(on ? (all.input.checked ? 'all' : 'popups') : null);
+      all.input.disabled = !on;
+      if (on) cleanNow();
+      else showAgain('Off.');
+    },
+  });
+  const runOnPage = (func, ...args) => browser.scripting.executeScript({ target: { tabId: tab.id }, func, args });
   async function cleanNow() {
     try {
       await browser.scripting.executeScript({ target: { tabId: tab.id }, files: ['content/popups.js'] });
-      const [res] = await browser.scripting.executeScript({
-        target: { tabId: tab.id },
-        args: [all.input.checked ? 'all' : 'popups'],
-        func: (lvl) => window.msfPopups.start(lvl, true),
-      });
+      const [res] = await runOnPage((lvl) => window.msfPopups.start(lvl, true), all.input.checked ? 'all' : 'popups');
       const n = res?.result || 0;
-      status.textContent = n ? `Removed ${n} pop-up${n === 1 ? '' : 's'}. Reload to bring them back.` : 'Nothing to remove right now. It keeps watching.';
+      status.textContent = n ? `Hid ${n} pop-up${n === 1 ? '' : 's'}. "Show them again" puts them back.` : 'Nothing to hide right now. It keeps watching.';
     } catch {
       status.textContent = 'Firefox doesn\'t let add-ons change this page.';
     }
   }
-  const popups = card('Pop-ups', popupSwitch, h('div', { class: 'checks' }, all),
-    h('div', { class: 'buttons' }, h('button', { type: 'button', class: 'btn secondary', onclick: cleanNow }, 'Clean this page once')),
+  async function showAgain(prefix = '') {
+    try {
+      const [res] = await runOnPage(() => window.msfPopups?.stop() ?? 0);
+      const n = res?.result || 0;
+      status.textContent = `${prefix} ${n ? `Showed ${n} hidden thing${n === 1 ? '' : 's'} again.` : 'Nothing was hidden on this page.'}`.trim();
+    } catch {
+      status.textContent = `${prefix} Reload the page to bring back anything hidden.`.trim();
+    }
+  }
+  const popupControls = siteOk()
+    ? [popupSwitch, h('div', { class: 'checks' }, all)]
+    : [note('Only the button works here: per-site settings need a normal web address.')];
+  const popups = card('Pop-ups', ...popupControls,
+    h('div', { class: 'buttons two' },
+      h('button', { type: 'button', class: 'btn secondary', onclick: cleanNow }, 'Clean this page once'),
+      h('button', { type: 'button', class: 'btn secondary', onclick: () => showAgain() }, 'Show them again')),
     status);
 
   // Compatibility
-  const chromeStatus = note('Only for sites that say Firefox isn\'t supported. The page reloads.');
+  const chromeStatus = note(siteOk()
+    ? 'Only for sites that say Firefox isn\'t supported. The page reloads.'
+    : 'Needs a normal web address, not an IP address or a name like "localhost".');
   const chrome = card('Compatibility',
-    switchRow({
+    siteOk() ? switchRow({
       label: 'Pretend to be Chrome',
-      hint: `Only on ${host}`,
-      get: () => current.chromeSites.includes(host),
+      hint: `Only on ${matchOf(current.chromeSites) || host}`,
+      get: () => onList(current.chromeSites),
       set: async (on) => {
-        const sites = current.chromeSites.filter((s) => s !== host);
+        const sites = current.chromeSites.filter((s) => !covers(s));
         if (on) sites.push(host);
         current.chromeSites = sites;
         chromeStatus.textContent = on ? 'Reloading as Chrome…' : 'Reloading as Firefox…';
         await browser.runtime.sendMessage({ type: 'saveSites', changes: { chromeSites: sites } });
         browser.tabs.reload(tab.id, { bypassCache: true });
       },
-    }),
+    }) : null,
     chromeStatus);
 
   // What to do when a site breaks
@@ -180,7 +208,7 @@ function linksPanel() {
   return [
     wide('Clean links',
       switchRow({ key: 'cleanParams', label: 'Remove tracking from links', hint: 'utm_, fbclid, gclid, Spotify and YouTube si= and about 60 more' }),
-      switchRow({ key: 'unwrapRedirects', label: 'Skip redirect links', hint: 'Google, Facebook, Instagram, YouTube, Reddit, Steam, Bing and DuckDuckGo go straight to the site' }),
+      switchRow({ key: 'unwrapRedirects', label: 'Skip redirect links', hint: 'Google, Facebook, Instagram, YouTube, Reddit, Steam, Bing and DuckDuckGo go straight to the site. This also skips their "you are leaving" warning pages' }),
       switchRow({ key: 'unwrapAmp', label: 'Real pages instead of AMP', hint: 'Google AMP links open the original page' }),
       switchRow({ key: 'cleanLinkMenu', label: 'Copy clean link', hint: 'Right-click any link to copy it without tracking' })),
   ];

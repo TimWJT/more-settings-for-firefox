@@ -1,14 +1,18 @@
-// Pop-up remover. Runs on sites you switched it on for, or once when you press "Clean this page".
+// Pop-up remover. Runs on sites you switched it on for, or once when you press "Clean this page once".
 // Hides overlays that float over the page (cookie walls, sign-up boxes, dark backdrops) and lets the page scroll again.
-// Level "popups": only big overlays and ones that look like cookie/newsletter boxes.
+// Level "popups": only big overlays, and cookie/newsletter boxes.
 // Level "all": also unsticks headers and hides every bar that floats over the page.
+// Every change is remembered, so stop() puts the page back exactly as it was.
 (() => {
   if (window.msfPopups) {
     window.msfPopups.boot();
     return;
   }
 
-  const WORDS = /cookie|consent|gdpr|privacy[ -]?(choices|preferences|settings)|newsletter|subscribe|sign[ -]?up|paywall|modal|overlay|popup|pop-up|lightbox|backdrop|interstitial|adblock|onetrust|didomi|\bcmp\b/i;
+  // Words that on their own mean "this is a cookie box, sign-up box or paywall".
+  const STRONG = /cookie|consent|gdpr|privacy[ -]?(choices|preferences|settings)|newsletter|subscribe|sign[ -]?up|paywall|adblock|onetrust|didomi|\bcmp\b/i;
+  // Words that only count together with a big overlay ("modal" is also used for menus and dialogs you open).
+  const GENERIC = /modal|overlay|popup|pop-up|lightbox|backdrop|interstitial/i;
   const TEXT = /\b(cookies?|consent|accept all|reject all|we use|newsletter|subscribe|sign up|sign in to continue|disable your ad ?blocker|turn off your ad ?blocker)\b/i;
 
   let level = null;   // null = off
@@ -16,9 +20,22 @@
   let lastUserAction = 0;
   let observer = null;
   let timer = 0;
+  let bodyText = 0;   // page text length, measured once per scan
+  const changes = []; // [element, property, old value, old priority] for undo
 
   addEventListener('pointerdown', () => { lastUserAction = Date.now(); }, true);
   addEventListener('keydown', () => { lastUserAction = Date.now(); }, true);
+
+  function setStyle(el, prop, value) {
+    changes.push([el, prop, el.style.getPropertyValue(prop), el.style.getPropertyPriority(prop)]);
+    el.style.setProperty(prop, value, 'important');
+  }
+
+  function hide(el) {
+    setStyle(el, 'display', 'none');
+    el.setAttribute('data-msf', 'hidden');
+    hidden++;
+  }
 
   const visibleArea = (r) => {
     const w = Math.max(0, Math.min(r.right, innerWidth) - Math.max(r.left, 0));
@@ -26,10 +43,13 @@
     return w * h;
   };
 
-  function hide(el) {
-    el.style.setProperty('display', 'none', 'important');
-    el.setAttribute('data-msf', 'hidden');
-    hidden++;
+  // Things that are clearly part of the page or something you're using: never hidden.
+  function isPageUi(el) {
+    if (el.querySelector('main, article, [role="main"], video, canvas, input[type="password"], [contenteditable="true"]')) return true;
+    const active = document.activeElement;
+    if (active && active !== document.body && el.contains(active)) return true;
+    const own = el.textContent.length;
+    return bodyText > 500 && own > bodyText * 0.5;
   }
 
   function check(el) {
@@ -45,37 +65,34 @@
     const r = el.getBoundingClientRect();
     const area = visibleArea(r);
     if (!area) return;
-    const screen = innerWidth * innerHeight;
 
     if (cs.position === 'sticky') {
       if (level === 'all') {
-        el.style.setProperty('position', 'static', 'important');
+        setStyle(el, 'position', 'static');
         el.setAttribute('data-msf', 'unstuck');
       }
       return;
     }
+    if (isPageUi(el)) return;
 
-    // Never hide something that holds the page itself (apps, editors and maps often use a fixed full-screen root).
-    if (el.querySelector('main, article, [role="main"]')) return;
-    const bodyText = document.body.innerText.length;
-    const ownText = (el.innerText || '').length;
-    if (bodyText > 500 && ownText > bodyText * 0.5) return;
-
-    const named = WORDS.test(`${el.id} ${el.className} ${el.getAttribute('role') || ''} ${el.getAttribute('aria-label') || ''}`);
+    const name = `${el.id} ${el.className} ${el.getAttribute('role') || ''} ${el.getAttribute('aria-label') || ''}`;
     // A slim bar along the top is usually the site's header, which often has a Subscribe or Sign up link.
     const header = r.top <= 2 && r.height < 130;
-    const text = !header && ownText < 2000 && TEXT.test(el.innerText || '');
-    // A big overlay counts only if it looks like a backdrop (see-through or nearly empty) or says it's a pop-up.
+    const text = el.textContent.length < 2000 && TEXT.test(el.textContent);
+    const strong = !header && (STRONG.test(name) || text);
+    const big = area >= innerWidth * innerHeight * 0.25;
+    // A big overlay counts only if it's see-through or nearly empty (a backdrop), or says it's a pop-up.
     const bg = cs.backgroundColor.match(/rgba?\(([^)]+)\)/);
     const alpha = bg ? Number(bg[1].split(',')[3] ?? 1) : 1;
-    const backdrop = (alpha > 0 && alpha < 1) || Number(cs.opacity) < 1 || ownText < 400;
-    const big = area >= screen * 0.25 && (backdrop || named || text);
+    const backdrop = (alpha > 0 && alpha < 1) || Number(cs.opacity) < 1 || el.textContent.length < 400;
+    // Small boxes need a strong sign and the shape of a banner (wide) or a box in the middle of the screen.
+    const bannerShape = r.width >= innerWidth * 0.5 || Math.abs((r.left + r.right) / 2 - innerWidth / 2) < innerWidth * 0.15;
 
-    if (big || named || text) {
+    if (big ? (backdrop || strong || GENERIC.test(name)) : (strong && bannerShape)) {
       hide(el);
     } else if (level === 'all') {
-      if (r.top <= 2 && r.height < innerHeight * 0.3) {
-        el.style.setProperty('position', 'absolute', 'important');
+      if (header && r.height < innerHeight * 0.3) {
+        setStyle(el, 'position', 'absolute');
         el.setAttribute('data-msf', 'unstuck');
       } else {
         hide(el);
@@ -90,54 +107,61 @@
       if (!el) continue;
       const cs = getComputedStyle(el);
       if (cs.overflowY === 'hidden' || cs.overflow === 'hidden') {
-        el.style.setProperty('overflow', 'auto', 'important');
-        el.style.setProperty('overflow-y', 'auto', 'important');
+        setStyle(el, 'overflow', 'auto');
+        setStyle(el, 'overflow-y', 'auto');
       }
-      if (el === document.body && cs.position === 'fixed') {
-        el.style.setProperty('position', 'static', 'important');
-      }
+      if (el === document.body && cs.position === 'fixed') setStyle(el, 'position', 'static');
     }
     for (const el of document.body?.children || []) {
       const f = getComputedStyle(el).filter;
-      if (f && f.includes('blur')) el.style.setProperty('filter', 'none', 'important');
+      if (f && f.includes('blur')) setStyle(el, 'filter', 'none');
     }
   }
 
   function scanAll() {
     if (!level || !document.body) return;
+    bodyText = document.body.textContent.length;
     for (const el of document.body.getElementsByTagName('*')) check(el);
     unlock();
   }
 
   function scanSome(nodes) {
+    if (!level || !document.body) return;
+    bodyText = document.body.textContent.length;
     let n = 0;
-    for (const node of nodes) {
-      if (!(node instanceof HTMLElement)) continue;
+    for (const [node, deep] of nodes) {
       check(node);
-      for (const el of node.getElementsByTagName('*')) {
-        check(el);
-        if (++n > 800) break;
+      if (deep) {
+        for (const el of node.getElementsByTagName('*')) {
+          check(el);
+          if (++n > 400) break;
+        }
       }
-      if (n > 800) break;
+      if (++n > 400) break;
     }
     unlock();
   }
 
-  let pending = new Set();
+  // Watches for pop-ups that appear later. New elements are checked with their children;
+  // a class or style change only checks that one element. Changes to <html> and <body> (often our own) are ignored.
+  let pending = new Map();
   function watch() {
     if (observer) return;
     observer = new MutationObserver((records) => {
       for (const r of records) {
-        if (r.type === 'attributes') pending.add(r.target);
-        else for (const n of r.addedNodes) pending.add(n);
+        if (r.type === 'attributes') {
+          if (r.target !== document.documentElement && r.target !== document.body && !pending.has(r.target)) pending.set(r.target, false);
+        } else {
+          for (const n of r.addedNodes) if (n instanceof HTMLElement) pending.set(n, true);
+        }
       }
-      if (timer) return;
+      if (timer || !pending.size) return;
       timer = setTimeout(() => {
         timer = 0;
         const nodes = pending;
-        pending = new Set();
+        pending = new Map();
         scanSome(nodes);
-      }, 250);
+      }, 300);
     });
     observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style', 'open'] });
   }
@@ -154,25 +178,35 @@
     return hidden;
   }
 
+  // Turn off and put back everything that was hidden or changed.
   function stop() {
     level = null;
     observer?.disconnect();
     observer = null;
+    for (const [el, prop, value, priority] of changes.reverse()) {
+      if (value) el.style.setProperty(prop, value, priority); else el.style.removeProperty(prop);
+      el.removeAttribute('data-msf');
+    }
+    changes.length = 0;
+    const n = hidden;
+    hidden = 0;
+    return n;
   }
 
-  // The site's entry, or its parent domain's (pop-up removal for example.com also covers www.example.com).
-  function siteLevel(sites) {
+  // The entry for this site, or its parent domain's (example.com also covers www.example.com).
+  function onList(list) {
     const parts = location.hostname.split('.');
     for (let i = 0; i < parts.length - 1; i++) {
-      const lvl = sites[parts.slice(i).join('.')];
-      if (lvl) return lvl;
+      const site = parts.slice(i).join('.');
+      if (Array.isArray(list) ? list.includes(site) : list[site]) return Array.isArray(list) ? true : list[site];
     }
     return null;
   }
 
   function boot() {
-    browser.storage.local.get({ popupSites: {} }).then(({ popupSites }) => {
-      const lvl = siteLevel(popupSites);
+    browser.storage.local.get({ popupSites: {}, pausedSites: [] }).then(({ popupSites, pausedSites }) => {
+      if (onList(pausedSites)) return;
+      const lvl = onList(popupSites);
       if (lvl) start(lvl, true);
     });
   }

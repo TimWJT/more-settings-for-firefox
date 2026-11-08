@@ -14,30 +14,43 @@ const isPaused = (host) => onSite(settings.pausedSites, host);
 // ---------- Links: clean tracking out of every page you open ----------
 // What was cleaned is kept per tab (storage.session "act<tabId>") so the badge and the popup can show it.
 const ACT_KEY = (tabId) => `act${tabId}`;
-const bypassTabs = new Map();  // tabId -> time until which that tab's links aren't cleaned ("Open original link")
+// "Open original link" (and the loop guard) stop cleaning in a tab for a few seconds.
+// Kept in storage.session so it survives this page being unloaded in between.
+const BYPASS_KEY = (tabId) => `bypass${tabId}`;
+const setBypass = (tabId, ms) => browser.storage.session.set({ [BYPASS_KEY(tabId)]: Date.now() + ms });
 
 async function cleanNavigation(details) {
   if (details.method !== 'GET') return {};
-  await settingsReady;
-  if ((bypassTabs.get(details.tabId) || 0) > Date.now()) return {};
+  if (!settings) await settingsReady;
+  // Cheap checks first: most pages need no change and never touch storage.
   if (isPaused(hostOf(details.url))) return {};
   const next = msfCleanOnce(details.url, settings);
   if (!next) return {};
-  if (details.tabId >= 0) {
-    const key = ACT_KEY(details.tabId);
-    const prev = (await browser.storage.session.get(key))[key];
-    // A redirect that was skipped and then had tracking removed counts as one change.
-    const chained = prev && prev.url === details.url && Date.now() - prev.time < 15000;
-    await browser.storage.session.set({
-      [key]: {
-        from: chained ? prev.from : details.url,
-        url: next.url,
-        notes: chained ? [...prev.notes, next.note] : [next.note],
-        time: Date.now(),
-        page: null,
-      },
-    });
+  if (details.tabId < 0) return { redirectUrl: next.url };
+
+  const key = ACT_KEY(details.tabId), bkey = BYPASS_KEY(details.tabId);
+  const stored = await browser.storage.session.get([key, bkey]);
+  if ((stored[bkey] || 0) > Date.now()) return {};
+  const prev = stored[key];
+  const now = Date.now();
+  // A redirect that was skipped and then had tracking removed counts as one change.
+  const chained = prev && prev.page === null && now - prev.time < 10000;
+  const count = chained ? (prev.count || 1) + 1 : 1;
+  // Loop guard: if the site keeps adding the parameter back, stop cleaning this tab for a bit.
+  if (count > 4) {
+    await setBypass(details.tabId, 15000);
+    return {};
   }
+  await browser.storage.session.set({
+    [key]: {
+      from: chained ? prev.from : details.url,
+      url: next.url,
+      notes: chained ? [...new Set([...prev.notes, next.note])] : [next.note],
+      time: now,
+      page: null,
+      count,
+    },
+  });
   return { redirectUrl: next.url };
 }
 browser.webRequest.onBeforeRequest.addListener(cleanNavigation, { urls: ['http://*/*', 'https://*/*'], types: ['main_frame'] }, ['blocking']);
@@ -62,7 +75,7 @@ async function pageActivity(tabId, url) {
   const items = [];
   if (isPaused(host)) return { paused: true, items };
   const act = (await browser.storage.session.get(ACT_KEY(tabId)))[ACT_KEY(tabId)];
-  if (act?.page && act.page === url) items.push(`Link cleaned: ${act.notes.join('; ')}`);
+  if (act?.page && act.page === url && Array.isArray(act.notes)) items.push(`Link cleaned: ${act.notes.join('; ')}`);
   if (onSite(Object.keys(settings.popupSites), host)) items.push('Pop-up remover is on');
   if (onSite(settings.chromeSites, host)) items.push('Pretending to be Chrome');
   return { paused: false, items };
@@ -87,7 +100,7 @@ browser.tabs.onUpdated.addListener(async (tabId, change, tab) => {
     const key = ACT_KEY(tabId);
     const act = (await browser.storage.session.get(key))[key];
     if (act) {
-      if (act.page === null && Date.now() - act.time < 15000) {
+      if (act.page === null && Date.now() - act.time < 30000) {
         act.page = change.url;  // the page the cleaned link ended up on
         await browser.storage.session.set({ [key]: act });
       } else if (act.page !== change.url) {
@@ -97,10 +110,7 @@ browser.tabs.onUpdated.addListener(async (tabId, change, tab) => {
   }
   if (change.url || change.status === 'complete') updateBadge(tabId, tab.url);
 });
-browser.tabs.onRemoved.addListener((tabId) => {
-  bypassTabs.delete(tabId);
-  browser.storage.session.remove(ACT_KEY(tabId));
-});
+browser.tabs.onRemoved.addListener((tabId) => browser.storage.session.remove([ACT_KEY(tabId), BYPASS_KEY(tabId)]));
 
 const updateAllBadges = () => browser.tabs.query({ discarded: false }).then((tabs) => tabs.forEach((t) => updateBadge(t.id, t.url)));
 
@@ -121,9 +131,10 @@ const ALL_TYPES = ['main_frame', 'sub_frame', 'stylesheet', 'script', 'image', '
   'ping', 'media', 'websocket', 'other'];
 
 function chromeVersion() {
-  // Chrome 138 shipped 2025-06-24 and a new major comes out every 4 weeks. One behind is safest.
+  // Chrome 138 shipped 2025-06-24. Releases are 4-6 weeks apart, so count one per 5 weeks and stay one behind:
+  // a slightly old version is normal, an unreleased one looks fake. Same formula in content/chrome-mask.js.
   const weeks = (Date.now() - Date.UTC(2025, 5, 24)) / (7 * 864e5);
-  return 138 + Math.max(0, Math.floor(weeks / 4) - 1);
+  return 138 + Math.max(0, Math.floor(weeks / 5) - 1);
 }
 
 async function chromeHeaders() {
@@ -145,34 +156,44 @@ const validHost = (h) => /^[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(h) && !/^\d+(\.\d+)
 // The host and its subdomains, to match the DNR rules (requestDomains also covers subdomains).
 const matchesFor = (hosts) => hosts.flatMap((h) => [`*://${h}/*`, `*://*.${h}/*`]);
 
-async function registerScript(id, hosts, options) {
-  try {
-    await browser.scripting.unregisterContentScripts({ ids: [id] });
-  } catch { /* wasn't registered */ }
-  if (hosts.length) await browser.scripting.registerContentScripts([{ id, matches: matchesFor(hosts), persistAcrossSessions: true, ...options }]);
+// Registers (or removes) a content script, but only touches Firefox when something actually changed,
+// so a page loading at the same moment never sees a gap.
+async function registerScript(id, hosts, paused, options) {
+  const existing = (await browser.scripting.getRegisteredContentScripts({ ids: [id] }))[0];
+  const wanted = hosts.length
+    ? { id, matches: matchesFor(hosts), excludeMatches: paused.length ? matchesFor(paused) : undefined, persistAcrossSessions: true, ...options }
+    : null;
+  const same = (a, b) => JSON.stringify([...(a || [])].sort()) === JSON.stringify([...(b || [])].sort());
+  if (existing && wanted && same(existing.matches, wanted.matches) && same(existing.excludeMatches, wanted.excludeMatches)
+    && same(existing.js, wanted.js)) return;
+  if (existing) await browser.scripting.unregisterContentScripts({ ids: [id] });
+  if (wanted) await browser.scripting.registerContentScripts([wanted]);
 }
 
 async function applySites() {
-  // Paused sites get nothing from this add-on.
-  const active = (h) => validHost(h) && !isPaused(h);
-  const popupHosts = Object.keys(settings.popupSites).filter(active);
-  const chromeHosts = settings.chromeSites.filter(active);
+  const popupHosts = Object.keys(settings.popupSites).filter(validHost);
+  const chromeHosts = settings.chromeSites.filter(validHost);
+  // Paused sites get nothing, even when the setting is on for their parent domain (pause shop.example.com, keep example.com).
+  const paused = settings.pausedSites.filter(validHost);
   const steps = [
-    () => registerScript('popups', popupHosts, { js: ['content/popups.js'], runAt: 'document_idle' }),
-    () => registerScript('chrome-mask', chromeHosts, {
+    () => registerScript('popups', popupHosts, paused, { js: ['content/popups.js'], runAt: 'document_idle' }),
+    () => registerScript('chrome-mask', chromeHosts, paused, {
       js: ['content/chrome-mask.js'], runAt: 'document_start', allFrames: true, matchOriginAsFallback: true, world: 'MAIN',
     }),
     async () => {
-      const old = (await browser.declarativeNetRequest.getDynamicRules()).map((r) => r.id);
+      const old = await browser.declarativeNetRequest.getDynamicRules();
       const rules = [];
       if (chromeHosts.length) {
         const action = { type: 'modifyHeaders', requestHeaders: await chromeHeaders() };
-        rules.push({ id: 1, priority: 1, action, condition: { requestDomains: chromeHosts, resourceTypes: ALL_TYPES } });
+        const skip = paused.length ? { excludedRequestDomains: paused, excludedInitiatorDomains: paused } : {};
+        rules.push({ id: 1, priority: 1, action, condition: { requestDomains: chromeHosts, resourceTypes: ALL_TYPES, ...skip } });
         // Requests the site makes to other servers, but not pages you open from it.
         const sub = ALL_TYPES.filter((t) => t !== 'main_frame' && t !== 'sub_frame');
-        rules.push({ id: 2, priority: 1, action, condition: { initiatorDomains: chromeHosts, resourceTypes: sub } });
+        rules.push({ id: 2, priority: 1, action, condition: { initiatorDomains: chromeHosts, resourceTypes: sub, ...skip } });
       }
-      await browser.declarativeNetRequest.updateDynamicRules({ removeRuleIds: old, addRules: rules });
+      const key = (list) => JSON.stringify(list.map((r) => [r.id, r.condition, r.action]));
+      if (key(old) === key(rules)) return;
+      await browser.declarativeNetRequest.updateDynamicRules({ removeRuleIds: old.map((r) => r.id), addRules: rules });
     },
   ];
   // Each step on its own, so one failure doesn't leave the others half done.
@@ -252,7 +273,7 @@ browser.runtime.onMessage.addListener((msg) => {
       const key = ACT_KEY(msg.tabId);
       const act = (await browser.storage.session.get(key))[key];
       if (!act) return false;
-      bypassTabs.set(msg.tabId, Date.now() + 10000);
+      await setBypass(msg.tabId, 10000);
       await browser.storage.session.remove(key);
       await browser.tabs.update(msg.tabId, { url: act.from });
       return true;
@@ -286,4 +307,9 @@ browser.storage.onChanged.addListener((changes, area) => {
 });
 
 browser.runtime.onInstalled.addListener(() => applyAll());
-browser.runtime.onStartup.addListener(() => applyAll(['sites', 'menu']));
+// Each time this page starts (browser start, add-on re-enabled, woken up), check the per-site scripts and rules
+// are still in place. registerScript and the rule check only change something if it's missing or different.
+browser.runtime.onStartup.addListener(() => applyAll(['menu']));
+applyAll(['sites']);
+// Website access granted later (from the popup's Allow button): set everything up now.
+browser.permissions.onAdded.addListener(() => applyAll());
