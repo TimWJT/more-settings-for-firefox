@@ -70,7 +70,7 @@ function sitePanel() {
   const list = h('div', { class: 'checkup' });
   (async () => {
     if (onList(current.pausedSites)) {
-      list.append(activityRow('II', 'Paused on this site', 'This add-on changes nothing here.'));
+      list.append(activityRow('–', 'Nothing changed on this page', 'Paused here.'));
       return;
     }
     const key = `act${tab.id}`;
@@ -92,11 +92,13 @@ function sitePanel() {
       list.append(activityRow('–', 'Nothing changed on this page', 'If it looks broken, it isn\'t this add-on. See "Something broken?"'));
     }
   })();
-  const pause = switchRow({
-    label: 'Pause on this site',
-    hint: 'Turns this add-on off here. The page reloads as it was, without any changes.',
-    get: () => onList(current.pausedSites),
-    set: async (on) => {
+  // The big Pause button: the first thing to press when a site looks broken.
+  const paused = onList(current.pausedSites);
+  const pause = h('button', {
+    type: 'button', class: 'pause' + (paused ? ' paused' : ''), 'aria-pressed': String(paused),
+    onclick: async (e) => {
+      e.currentTarget.disabled = true;
+      const on = !paused;
       const sites = current.pausedSites.filter((s) => !covers(s));
       if (on) sites.push(host);
       current.pausedSites = sites;
@@ -108,8 +110,14 @@ function sitePanel() {
       else browser.tabs.reload(tab.id);
       window.close();
     },
-  });
-  const activity = wide('On this page', list, pause);
+  },
+  h('span', { class: 'pause-icon', 'aria-hidden': 'true' }, paused ? '▶' : '❚❚'),
+  h('span', { class: 'pause-text' },
+    h('span', { class: 'pause-title' }, paused ? 'Resume on this site' : 'Pause on this site'),
+    h('span', { class: 'pause-sub' }, paused
+      ? `Paused on ${matchOf(current.pausedSites)}. This add-on changes nothing here.`
+      : 'Site looks broken? Turn this add-on off here. The page reloads as it was.')));
+  const activity = wide('On this page', list);
 
   // Pop-ups
   const status = note('Hides cookie walls, sign-up boxes and dark overlays. Off until you turn it on for a site.');
@@ -200,7 +208,7 @@ function sitePanel() {
       h('li', {}, h('b', {}, 'Firefox: '), 'click the shield left of the address bar and turn off Enhanced Tracking Protection for this site.')),
     note('Try them in that order and reload after each one. Whatever fixes it was the cause.'));
 
-  return [activity, popups, chrome, broken];
+  return [pause, activity, popups, chrome, broken];
 }
 
 // ---------- Links ----------
@@ -230,7 +238,6 @@ function privacyPanel() {
   return [
     card('Leaks',
       switchRow({ key: 'webrtcProtect', label: 'Hide your local IP', hint: 'Video-call tech (WebRTC) can\'t show sites your home network address' }),
-      h('div', { class: 'checks' }, checkRow({ key: 'webrtcStrict', label: 'Strict: only through a VPN or proxy' })),
       controlNote(p.network.webRTCIPHandlingPolicy),
       switchRow({ key: 'blockPing', label: 'Block click pings', hint: 'Links can\'t quietly report each click to the site' }),
       controlNote(p.websites.hyperlinkAuditingEnabled)),
@@ -241,37 +248,76 @@ function privacyPanel() {
 }
 
 // ---------- Tabs ----------
+// Turns a key press into Firefox's shortcut format ("Alt+Shift+D"), or null while only modifiers are held.
+const KEY_NAMES = {
+  ',': 'Comma', '.': 'Period', ' ': 'Space', Home: 'Home', End: 'End', PageUp: 'PageUp', PageDown: 'PageDown',
+  Insert: 'Insert', Delete: 'Delete', ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right',
+};
+function shortcutFrom(e) {
+  let key = null;
+  if (/^Key[A-Z]$/.test(e.code)) key = e.code.slice(3);
+  else if (/^Digit[0-9]$/.test(e.code)) key = e.code.slice(5);
+  else if (/^F([1-9]|1[0-2])$/.test(e.key)) key = e.key;
+  else key = KEY_NAMES[e.key] || null;
+  if (!key) return null;
+  const mac = /Mac/.test(navigator.platform);
+  const mods = [];
+  if (e.ctrlKey) mods.push(mac ? 'MacCtrl' : 'Ctrl');
+  if (e.altKey) mods.push('Alt');
+  if (e.metaKey && mac) mods.push('Command');
+  if (e.shiftKey) mods.push('Shift');
+  return [...mods, key].join('+');
+}
+
 function tabsPanel() {
-  const status = note('');
-  const button = (label, command, primary) => h('button', {
-    type: 'button', class: 'btn ' + (primary ? 'primary' : 'secondary'),
-    onclick: async () => {
-      try {
-        await browser.runtime.sendMessage({ type: 'tabCommand', command });
-        window.close();
-      } catch (err) {
-        status.textContent = err.message;
-        status.classList.add('warn');
-      }
-    },
-  }, label);
-  const keys = h('div', { class: 'check-row' });
-  browser.commands.getAll().then((cmds) => {
-    keys.replaceWith(h('div', { class: 'checkup' }, ...cmds.map((c) => h('div', { class: 'check-row' },
-      h('span', { class: 'mark', 'aria-hidden': 'true' }, '⌨'),
-      h('span', { class: 'name' }, c.description),
-      h('small', {}, c.shortcut || 'No shortcut set')))));
+  const status = note('Click the box, then press the keys you want.');
+  const box = h('button', { type: 'button', class: 'keybox', 'aria-label': 'Duplicate tab shortcut. Click, then press new keys.' }, '…');
+  let recording = false;
+  const show = async () => {
+    const cmd = (await browser.commands.getAll()).find((c) => c.name === 'duplicate-tab');
+    box.textContent = cmd?.shortcut || 'None';
+  };
+  const stopRecording = () => { recording = false; box.classList.remove('recording'); };
+  box.addEventListener('click', () => {
+    recording = true;
+    box.classList.add('recording');
+    box.textContent = 'Press keys…';
+    status.classList.remove('warn');
+    status.textContent = 'Use Ctrl or Alt with a letter or number, e.g. Alt+Shift+D. Esc cancels.';
   });
+  box.addEventListener('blur', () => { if (recording) { stopRecording(); show(); } });
+  box.addEventListener('keydown', async (e) => {
+    if (!recording) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.key === 'Escape') { stopRecording(); show(); status.textContent = 'Not changed.'; return; }
+    const combo = shortcutFrom(e);
+    if (!combo) return;  // still holding modifiers
+    stopRecording();
+    try {
+      await browser.commands.update({ name: 'duplicate-tab', shortcut: combo });
+      status.textContent = `Saved. ${combo} now duplicates the tab.`;
+    } catch {
+      status.classList.add('warn');
+      status.textContent = `${combo} can't be used. Include Ctrl or Alt, plus a letter, number or F-key.`;
+    }
+    show();
+  });
+  const reset = h('button', {
+    type: 'button', class: 'btn secondary small',
+    onclick: async () => {
+      await browser.commands.reset('duplicate-tab');
+      status.classList.remove('warn');
+      status.textContent = 'Back to Alt+Shift+D.';
+      show();
+    },
+  }, 'Reset to Alt+Shift+D');
+  show();
   return [
-    card('Duplicate',
-      h('div', { class: 'buttons' },
-        button('Duplicate tab', 'duplicate-tab', true),
-        button('Duplicate to new window', 'duplicate-to-new-window'),
-        button('Move to new window', 'move-to-new-window')),
+    wide('Duplicate tab',
+      h('div', { class: 'keyrow' }, h('span', { class: 'name' }, 'Shortcut'), box, reset),
       status,
-      switchRow({ key: 'dupBackground', label: 'Stay on this tab', hint: 'Copies open in the background' })),
-    card('Shortcuts', keys,
-      h('p', { class: 'note' }, 'Change them in about:addons › ⚙ › Manage Extension Shortcuts. Select several tabs with Ctrl+click to copy them all at once.')),
+      switchRow({ key: 'dupBackground', label: 'Stay on this tab', hint: 'The copy opens next to it in the background. Select several tabs with Ctrl+click to copy them all.' })),
   ];
 }
 
@@ -291,9 +337,12 @@ function checkupPanel() {
       fix: 'Set tracking protection to Strict',
     },
     {
-      name: 'HTTPS-Only', setting: p.network.httpsOnlyMode,
-      good: (v) => v === 'always', ok: 'Every site uses a secure connection',
-      fix: 'Settings › Privacy & Security › HTTPS-Only Mode › Enable in all windows',
+      // Firefox already upgrades sites to HTTPS when it can (HTTPS-First, on by default), so HTTPS-Only is optional.
+      name: 'Secure connections', setting: p.network.httpsOnlyMode,
+      good: () => true,
+      ok: (v) => (v === 'always'
+        ? 'HTTPS-Only is on: Firefox warns before any site that isn\'t secure'
+        : 'Firefox switches sites to a secure connection when it can. Optional, stricter: HTTPS-Only in Settings › Privacy & Security'),
     },
     {
       name: 'Do not sell or share', setting: p.network.globalPrivacyControl,
@@ -311,13 +360,11 @@ function checkupPanel() {
       const good = r.good(value);
       row.classList.add(good ? 'good' : 'bad');
       mark.textContent = good ? '✓' : '!';
-      small.textContent = good ? r.ok : `Turn on: ${r.fix}`;
+      small.textContent = good ? (typeof r.ok === 'function' ? r.ok(value) : r.ok) : `Turn on: ${r.fix}`;
     }).catch(() => row.remove());
   }
   return [
     wide('Firefox\'s own settings', list),
-    wide('Works with uBlock Origin',
-      h('p', { class: 'note' }, 'Keep uBlock Origin for blocking ads and trackers. This add-on only does what Firefox and uBlock don\'t.')),
   ];
 }
 

@@ -119,8 +119,7 @@ async function applyPrivacy() {
   const p = browser.privacy;
   const set = (setting, on, value) => (on ? setting.set({ value }) : setting.clear({})).catch((e) => console.warn(e));
   await Promise.all([
-    set(p.network.webRTCIPHandlingPolicy, settings.webrtcProtect,
-      settings.webrtcStrict ? 'disable_non_proxied_udp' : 'default_public_interface_only'),
+    set(p.network.webRTCIPHandlingPolicy, settings.webrtcProtect, 'default_public_interface_only'),
     set(p.websites.hyperlinkAuditingEnabled, settings.blockPing, false),
     set(p.websites.resistFingerprinting, settings.resistFingerprinting, true),
   ]);
@@ -202,7 +201,7 @@ async function applySites() {
   }
 }
 
-// ---------- Tabs: duplicate (Alt+Shift+D), duplicate to a new window, move to a new window, new tab to the right ----------
+// ---------- Tabs: duplicate with a keyboard shortcut (Alt+Shift+D unless changed in the popup) ----------
 async function selectedTabs() {
   return browser.tabs.query({ currentWindow: true, highlighted: true });
 }
@@ -230,33 +229,11 @@ async function duplicateTabs() {
   if (!settings.dupBackground && target) await browser.tabs.update(target.id, { active: true });
 }
 
-async function toNewWindow(copy) {
-  await settingsReady;
-  const tabs = await selectedTabs();
-  const current = await browser.windows.getCurrent();
-  const ids = [];
-  for (const tab of tabs) ids.push(copy ? (await browser.tabs.duplicate(tab.id)).id : tab.id);
-  const win = await browser.windows.create({ tabId: ids[0], incognito: current.incognito, focused: !(copy && settings.dupBackground) });
-  if (ids.length > 1) await browser.tabs.move(ids.slice(1), { windowId: win.id, index: -1 });
-  for (const [i, tab] of tabs.entries()) if (tab.pinned) await browser.tabs.update(ids[i], { pinned: true });
-  if (copy && settings.dupBackground) await browser.windows.update(current.id, { focused: true });
-}
-
-async function newTabRight() {
-  const [tab] = await browser.tabs.query({ currentWindow: true, active: true });
-  await browser.tabs.create({ index: tab.index + 1, openerTabId: tab.id });
-}
-
-const TAB_COMMANDS = {
-  'duplicate-tab': duplicateTabs,
-  'duplicate-to-new-window': () => toNewWindow(true),
-  'move-to-new-window': () => toNewWindow(false),
-  'new-tab-to-the-right': newTabRight,
-};
-browser.commands.onCommand.addListener((command) => TAB_COMMANDS[command]?.());
+browser.commands.onCommand.addListener((command) => {
+  if (command === 'duplicate-tab') duplicateTabs();
+});
 
 browser.runtime.onMessage.addListener((msg) => {
-  if (msg?.type === 'tabCommand' && TAB_COMMANDS[msg.command]) return TAB_COMMANDS[msg.command]().then(() => true);
   // Popup: save per-site lists and wait until the rules are in place (so a reload uses them).
   if (msg?.type === 'saveSites') {
     return settingsReady.then(async () => {
@@ -293,7 +270,7 @@ function applyAll(parts = ['privacy', 'sites', 'menu']) {
   return applying;
 }
 
-const PRIVACY_KEYS = ['webrtcProtect', 'webrtcStrict', 'blockPing', 'resistFingerprinting'];
+const PRIVACY_KEYS = ['webrtcProtect', 'blockPing', 'resistFingerprinting'];
 browser.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') return;
   settingsReady.then(() => {

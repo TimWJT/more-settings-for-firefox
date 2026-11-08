@@ -15,14 +15,14 @@ Keep **uBlock Origin** for ads and trackers, and set Firefox's **Enhanced Tracki
 | **Real pages instead of AMP** (Google AMP and ampproject.org links) | on |
 | **Copy clean link** in the right-click menu | on |
 | **See what changed**: the toolbar icon shows a number when the add-on changed something on the page (hover for the list). The popup shows what was removed, with **Open original link** to load it as it was | on |
-| **Pause on this site**: turns the whole add-on off for one site | – |
+| **Pause on this site**: big amber button at the top of the popup, turns the whole add-on off for one site and reloads the page as it was | – |
 | **Remove pop-ups** per site: cookie walls, sign-up boxes, dark overlays, scroll lock. Optional: also unstick headers and bars. "Clean this page once" button | off (per site) |
 | **Pretend to be Chrome** per site, for sites that say Firefox isn't supported (headers and JavaScript both) | off (per site) |
-| **Hide your local IP** from WebRTC (optional strict mode: only through a VPN/proxy) | on |
+| **Hide your local IP** from WebRTC | on |
 | **Block click pings** (`<a ping>`) | on |
 | **Strong fingerprint protection** (Firefox's resistFingerprinting) | off |
-| **Duplicate tab** with **Alt+Shift+D** (stays on the current tab, switch in the popup) (works on several selected tabs, keeps pinned tabs pinned), duplicate to a new window, move to a new window, new tab to the right | on |
-| **Check-up** of Firefox's own settings: tracking protection, cookie protection, HTTPS-Only, "do not sell or share" | – |
+| **Duplicate tab** with **Alt+Shift+D** (change the keys in the popup; stays on the current tab; works on several selected tabs) | on |
+| **Check-up** of Firefox's own settings: tracking protection, cookie protection, secure connections, "do not sell or share" | – |
 
 Performance: the only code that runs per request is a check on each page you open (not on images, scripts or other files). The Chrome headers are changed by a Firefox rule, not by code. Pop-up removal and the Chrome mask only load on sites you switch them on for.
 

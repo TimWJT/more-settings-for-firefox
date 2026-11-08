@@ -98,11 +98,11 @@ Since then Firefox has built most of it in:
 - **Cons:** clocks on sites show the wrong time zone, dark mode stops working on sites, some sites break. Strict mode already has a lighter version, which is enough for most people.
 
 ### Tabs
-- **Alt+Shift+D** duplicates the tab (or all selected tabs) and keeps you on the tab you were on. There are also buttons to duplicate to a new window and to move the tab to a new window.
+- **Alt+Shift+D** duplicates the tab (or all selected tabs) and keeps you on the tab you were on. Change the keys in the popup (Tabs › Shortcut).
 
 ### Seeing what it did, and turning it off
 - **The number on the icon** counts what the add-on changed on the current page (a cleaned link, pop-up remover, Chrome mode). No number means it did nothing there.
-- **Pause on this site** (top of the popup) turns the whole add-on off for that site. The icon then says **off**.
+- **Pause on this site** (the big amber button at the top of the popup) turns the whole add-on off for that site. The icon then says **off**.
 - **Something broken?** at the bottom of the popup lists the three things to check, in order: this add-on, uBlock Origin's power button, Firefox's shield icon.
 
 ### Left out on purpose

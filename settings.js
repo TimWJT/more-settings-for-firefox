@@ -7,7 +7,6 @@ const MSF_DEFAULTS = {
   cleanLinkMenu: true,
   // Privacy (Firefox settings changed through browser.privacy)
   webrtcProtect: true,
-  webrtcStrict: false,
   blockPing: true,
   resistFingerprinting: false,
   // Tabs

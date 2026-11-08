@@ -12,6 +12,7 @@
   --accent-hover: #a3dca3;
   --accent-ink: #102010;
   --error: #ff9a92;
+  --pause: #ffb44d;        /* amber: only for the Pause button */
   --radius: 18px;
   --radius-sm: 9px;
   color-scheme: dark;
@@ -198,6 +199,53 @@ select option { background: #222; }
 .banner p { flex: 1; color: var(--text); }
 .banner .btn { min-height: 38px; padding: 0 18px; }
 .banner[hidden] { display: none; }
+
+/* Pause: big amber button above everything on "This site", so it never looks like just another toggle */
+.pause {
+  column-span: all;
+  break-inside: avoid;
+  display: flex; align-items: center; gap: 16px;
+  width: 100%;
+  margin: 0 0 12px;
+  padding: 16px 18px;
+  border: 2px solid var(--pause);
+  border-radius: var(--radius);
+  background: #ffb44d14;
+  color: var(--text);
+  text-align: left;
+  transition: background-color .12s ease-out;
+}
+.pause:hover { background: #ffb44d26; }
+.pause:focus-visible { outline: 2px solid var(--pause); outline-offset: 3px; }
+.pause:disabled { opacity: .6; cursor: progress; }
+.pause-icon {
+  flex: none; display: grid; place-items: center;
+  width: 48px; height: 48px; border-radius: 14px;
+  background: var(--pause); color: #2a1a00;
+  font-size: 18px; font-weight: 800; letter-spacing: -2px;
+}
+.pause-text { display: grid; gap: 3px; }
+.pause-title { font-size: 19px; font-weight: 700; color: var(--pause); }
+.pause-sub { font-size: 12.5px; color: var(--muted); line-height: 1.35; }
+.pause.paused { background: var(--pause); border-color: var(--pause); }
+.pause.paused:hover { background: #ffc773; }
+.pause.paused .pause-icon { background: #2a1a00; color: var(--pause); letter-spacing: 0; }
+.pause.paused .pause-title { color: #2a1a00; }
+.pause.paused .pause-sub { color: #2a1a00cc; }
+
+/* Shortcut recorder */
+.keyrow { display: flex; align-items: center; gap: 12px; padding: 4px 0 2px; }
+.keyrow .name { font-size: 16px; font-weight: 600; }
+.keyrow .btn.small { margin: 0 0 0 auto; }
+.keybox {
+  min-width: 130px; min-height: 40px; padding: 0 14px;
+  border: 2px solid transparent; border-radius: 12px;
+  background: var(--input); color: var(--text);
+  font: 650 15px/1 ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+.keybox:hover { background: var(--input-hover); }
+.keybox.recording { border-color: var(--accent); color: var(--accent); }
+.keybox:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* This site */
 .buttons.two { grid-template-columns: 1fr; gap: 8px; }
