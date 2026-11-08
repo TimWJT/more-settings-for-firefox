@@ -36,3 +36,12 @@ Privacy & Security, Tabs
 
 ## Tags
 privacy, tracking, clean urls, user agent, popup blocker, duplicate tab
+
+## License
+All Rights Reserved (matches the LICENSE file).
+
+## Support website
+https://github.com/TimWJT/more-settings-for-firefox
+
+## Privacy policy
+Leave "This add-on has a Privacy Policy" unticked. It collects nothing.
