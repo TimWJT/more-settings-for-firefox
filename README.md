@@ -2,7 +2,7 @@
 
 (The popup is titled "Firefox Settings".)
 
-A Firefox add-on with the privacy and tab extras that Firefox and uBlock Origin don't already do. It replaces a stack of popular add-ons (Chrome Mask, Don't Track Me Google, ClearURLs, Flagfox, PopUpOFF, Duplicate Tab Shortcut and the useful settings from Privacy Badger and DuckDuckGo) with one small add-on. Firefox 128+.
+A Firefox add-on with the privacy and tab extras that Firefox and uBlock Origin don't already do. It replaces a stack of popular add-ons (Chrome Mask, Don't Track Me Google, ClearURLs, PopUpOFF, Duplicate Tab Shortcut and the useful settings from Privacy Badger and DuckDuckGo) with one small add-on. Everything it does is visible: the number on its icon counts what it changed on the page, and each change can be undone. Firefox 128+.
 
 Keep **uBlock Origin** for ads and trackers, and set Firefox's **Enhanced Tracking Protection to Strict**.
 
@@ -14,15 +14,14 @@ Keep **uBlock Origin** for ads and trackers, and set Firefox's **Enhanced Tracki
 | **Skip redirect links**: Google, Facebook, Instagram, Threads, YouTube, Reddit, Steam, Tumblr, Bing and DuckDuckGo go straight to the site | on |
 | **Real pages instead of AMP** (Google AMP and ampproject.org links) | on |
 | **Copy clean link** in the right-click menu | on |
-| **Server country flag** in the address bar, from a built-in database (nothing is looked up online) | on |
+| **See what changed**: the toolbar icon shows a number when the add-on changed something on the page (hover for the list). The popup shows what was removed, with **Open original link** to load it as it was | on |
+| **Pause on this site**: turns the whole add-on off for one site | – |
 | **Remove pop-ups** per site: cookie walls, sign-up boxes, dark overlays, scroll lock. Optional: also unstick headers and bars. "Clean this page once" button | off (per site) |
 | **Pretend to be Chrome** per site, for sites that say Firefox isn't supported (headers and JavaScript both) | off (per site) |
-| **Forget this site**: deletes its cookies, local storage, IndexedDB and service workers, then reloads | button |
 | **Hide your local IP** from WebRTC (optional strict mode: only through a VPN/proxy) | on |
 | **Block click pings** (`<a ping>`) | on |
 | **Strong fingerprint protection** (Firefox's resistFingerprinting) | off |
-| **Don't pre-load links** (privacy over speed) | off |
-| **Duplicate tab** with **Alt+Shift+D** (works on several selected tabs, keeps pinned tabs pinned), duplicate to a new window, move to a new window, new tab to the right | on |
+| **Duplicate tab** with **Alt+Shift+D** (stays on the current tab, switch in the popup) (works on several selected tabs, keeps pinned tabs pinned), duplicate to a new window, move to a new window, new tab to the right | on |
 | **Check-up** of Firefox's own settings: tracking protection, cookie protection, HTTPS-Only, "do not sell or share" | – |
 
 Performance: the only code that runs per request is a check on each page you open (not on images, scripts or other files). The Chrome headers are changed by a Firefox rule, not by code. Pop-up removal and the Chrome mask only load on sites you switch them on for.
@@ -39,9 +38,11 @@ Performance: the only code that runs per request is a check on each page you ope
 | CanvasBlocker | Canvas noise | ETP Strict fingerprinting protection, or the Strong protection switch here |
 | Decentraleyes | Local copies of CDN libraries | Firefox keeps each site's cache separate, so CDNs can't follow you across sites that way any more |
 | User-Agent Switcher | Picking any browser | Pretend to be Chrome covers the case that matters |
+| Flagfox | Server country flag | Rarely useful: big sites use servers everywhere, so it mostly shows the nearest copy |
+| DuckDuckGo | Forget this site | Firefox has it: padlock in the address bar › Clear cookies and site data |
 | FoxyProxy | Proxy switching | Not a privacy feature on its own |
 
-All code is written from scratch. The country database is [ip-location-db geo-whois-asn-country](https://github.com/sapics/ip-location-db) (CC0), rebuilt with `python tools/build-ipdb.py <ipv4.csv> <ipv6.csv> data`.
+All code is written from scratch.
 
 ## Try it
 

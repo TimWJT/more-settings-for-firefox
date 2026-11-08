@@ -44,39 +44,64 @@ const card = (title, ...kids) => h('section', { class: 'card' }, title ? h('h2',
 const wide = (title, ...kids) => h('section', { class: 'card wide' }, title ? h('h2', {}, title) : null, ...kids);
 const note = (text, warn) => h('p', { class: 'note' + (warn ? ' warn' : ''), role: 'status', 'aria-live': 'polite' }, text);
 
-function countryName(cc) {
-  if (cc === 'LOCAL') return 'Your local network';
-  try { return new Intl.DisplayNames(['en'], { type: 'region' }).of(cc) || cc; } catch { return cc; }
+const onList = (sites) => sites.some((s) => host === s || host.endsWith('.' + s));
+
+function activityRow(mark, name, detail, ...extra) {
+  return h('div', { class: 'check-row' + (mark === '✓' ? ' good' : '') },
+    h('span', { class: 'mark', 'aria-hidden': 'true' }, mark),
+    h('span', { class: 'name' }, name),
+    h('small', {}, detail),
+    ...extra);
 }
-const flagEmoji = (cc) => (cc === 'LOCAL' ? '🏠' : String.fromCodePoint(...[...cc].map((c) => 0x1f1a5 + c.charCodeAt(0))));
 
 // ---------- This site ----------
 function sitePanel() {
   if (!host) {
-    return [wide(null, h('p', { class: 'note' }, 'Open a website to see where it\'s hosted and change settings for it.'))];
+    return [wide(null, note('Open a website to see what this add-on does there.'))];
   }
 
-  // Where the server is
-  const flag = h('span', { class: 'flag', 'aria-hidden': 'true' }, '🌐');
-  const country = h('span', { class: 'country' }, 'Looking up…');
-  const where = h('span', { class: 'where' }, host);
-  browser.storage.session.get(`tab${tab.id}`).then((all) => {
-    const info = all[`tab${tab.id}`];
-    if (info?.host === host && info.cc) {
-      flag.textContent = flagEmoji(info.cc);
-      country.textContent = countryName(info.cc);
-      where.textContent = `${host} · ${info.ip}`;
-    } else {
-      country.textContent = 'Unknown location';
-      if (info?.ip) where.textContent = `${host} · ${info.ip}`;
+  // What this add-on changed on the page, with undo
+  const list = h('div', { class: 'checkup' });
+  (async () => {
+    if (onList(current.pausedSites)) {
+      list.append(activityRow('II', 'Paused on this site', 'This add-on changes nothing here.'));
+      return;
     }
+    const key = `act${tab.id}`;
+    const act = (await browser.storage.session.get(key))[key];
+    if (act?.page && act.page === tab.url) {
+      const open = h('button', {
+        type: 'button', class: 'btn secondary small',
+        onclick: async () => {
+          await browser.runtime.sendMessage({ type: 'openOriginal', tabId: tab.id });
+          window.close();
+        },
+      }, 'Open original link');
+      list.append(activityRow('✓', 'Link cleaned', act.notes.join('. ') + '.', h('span'), open));
+    }
+    if (onList(Object.keys(current.popupSites))) list.append(activityRow('✓', 'Pop-up remover is on', 'Set below.'));
+    if (onList(current.chromeSites)) list.append(activityRow('✓', 'Pretending to be Chrome', 'Set below.'));
+    if (!list.children.length) {
+      list.append(activityRow('–', 'Nothing changed on this page', 'If it looks broken, it isn\'t this add-on. See "Something broken?"'));
+    }
+  })();
+  const pause = switchRow({
+    label: 'Pause on this site',
+    hint: 'Turns this add-on off here. The page reloads.',
+    get: () => onList(current.pausedSites),
+    set: async (on) => {
+      const sites = current.pausedSites.filter((s) => !(host === s || host.endsWith('.' + s)));
+      if (on) sites.push(host);
+      current.pausedSites = sites;
+      await browser.runtime.sendMessage({ type: 'saveSites', changes: { pausedSites: sites } });
+      browser.tabs.reload(tab.id);
+      window.close();
+    },
   });
-  const server = wide('Server',
-    h('div', { class: 'site' }, flag, country, where),
-    switchRow({ key: 'showFlag', label: 'Flag in the address bar', hint: 'Shows the country of the server or the CDN it uses' }));
+  const activity = wide('On this page', list, pause);
 
   // Pop-ups
-  const status = note('Hides cookie walls, sign-up boxes and dark overlays.');
+  const status = note('Hides cookie walls, sign-up boxes and dark overlays. Off until you turn it on for a site.');
   const level = () => current.popupSites[host];
   const setLevel = (lvl) => {
     const sites = { ...current.popupSites };
@@ -89,7 +114,7 @@ function sitePanel() {
     get: () => level() === 'all',
     set: (on) => level() && setLevel(on ? 'all' : 'popups'),
   });
-  const onSite = switchRow({
+  const popupSwitch = switchRow({
     label: 'Remove pop-ups here',
     hint: `Every time you open ${host}`,
     get: () => !!level(),
@@ -112,17 +137,17 @@ function sitePanel() {
         func: (lvl) => window.msfPopups.start(lvl, true),
       });
       const n = res?.result || 0;
-      status.textContent = n ? `Removed ${n} pop-up${n === 1 ? '' : 's'} on this page.` : 'Nothing to remove right now. It keeps watching.';
+      status.textContent = n ? `Removed ${n} pop-up${n === 1 ? '' : 's'}. Reload to bring them back.` : 'Nothing to remove right now. It keeps watching.';
     } catch {
       status.textContent = 'Firefox doesn\'t let add-ons change this page.';
     }
   }
-  const popups = card('Pop-ups', onSite, h('div', { class: 'checks' }, all),
+  const popups = card('Pop-ups', popupSwitch, h('div', { class: 'checks' }, all),
     h('div', { class: 'buttons' }, h('button', { type: 'button', class: 'btn secondary', onclick: cleanNow }, 'Clean this page once')),
     status);
 
   // Compatibility
-  const chromeStatus = note('For sites that say Firefox isn\'t supported. The page reloads.');
+  const chromeStatus = note('Only for sites that say Firefox isn\'t supported. The page reloads.');
   const chrome = card('Compatibility',
     switchRow({
       label: 'Pretend to be Chrome',
@@ -139,34 +164,15 @@ function sitePanel() {
     }),
     chromeStatus);
 
-  // Forget
-  const forgetStatus = note('Deletes its cookies and saved data, then reloads. You\'ll be signed out of it.');
-  const forget = card('Forget this site',
-    h('div', { class: 'buttons' }, h('button', {
-      type: 'button', class: 'btn primary',
-      onclick: async (e) => {
-        e.target.disabled = true;
-        try {
-          // The site's main domain: example.com for www.example.com, bbc.co.uk for www.bbc.co.uk. IP addresses stay as they are.
-          const parts = host.split('.');
-          const ip = /^[\d.]+$/.test(host) || host.includes(':');
-          const twoPart = parts.length > 2 && parts.at(-1).length === 2 && parts.at(-2).length <= 3;
-          const base = ip ? host : parts.slice(twoPart ? -3 : -2).join('.');
-          await browser.browsingData.remove({ hostnames: [...new Set([host, base])] },
-            { cookies: true, localStorage: true, indexedDB: true, serviceWorkers: true });
-          forgetStatus.textContent = `Forgot ${base}.`;
-          browser.tabs.reload(tab.id);
-        } catch (err) {
-          forgetStatus.textContent = `Couldn't forget it: ${err.message}`;
-          forgetStatus.classList.add('warn');
-        } finally {
-          e.target.disabled = false;
-        }
-      },
-    }, 'Forget this site')),
-    forgetStatus);
+  // What to do when a site breaks
+  const broken = wide('Something broken?',
+    h('ol', { class: 'steps' },
+      h('li', {}, h('b', {}, 'This add-on: '), 'the number on its icon shows what it changed. Use "Open original link" or "Pause on this site" above.'),
+      h('li', {}, h('b', {}, 'uBlock Origin: '), 'click its icon, then the big power button to turn it off for this site.'),
+      h('li', {}, h('b', {}, 'Firefox: '), 'click the shield left of the address bar and turn off Enhanced Tracking Protection for this site.')),
+    note('Try them in that order and reload after each one. Whatever fixes it was the cause.'));
 
-  return [server, popups, chrome, forget];
+  return [activity, popups, chrome, broken];
 }
 
 // ---------- Links ----------
@@ -203,9 +209,6 @@ function privacyPanel() {
     card('Fingerprinting',
       switchRow({ key: 'resistFingerprinting', label: 'Strong protection', tag: 'can break sites', hint: 'Sites see UTC time, light mode and a standard window size, so you look like everyone else' }),
       controlNote(p.websites.resistFingerprinting)),
-    card('Speed or privacy',
-      switchRow({ key: 'noPrefetch', label: 'Don\'t pre-load links', hint: 'Firefox stops connecting early to links you might click. A bit more private, pages open a bit slower' }),
-      controlNote(p.network.networkPredictionEnabled)),
   ];
 }
 

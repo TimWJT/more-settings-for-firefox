@@ -44,12 +44,12 @@ Since then Firefox has built most of it in:
 | **uBlock Origin** | Blocks ads, trackers and malware sites with filter lists | Fast, free, open source, no "acceptable ads" deals | Some sites detect it and complain | **Keep** |
 | **Disconnect** | Blocks ~1,200 tracker domains, shows a graph | Simple, early pioneer | Firefox Strict uses the same list, and its list is older | Remove |
 | **Privacy Badger** (EFF) | Learns trackers by watching who follows you across 3+ sites | Made by a trusted non-profit, no list needed | Learns slowly, sometimes breaks logins; uBlock + Strict already cover it | Remove. Its 2 useful settings are in our add-on |
-| **DuckDuckGo Essentials** | Tracker blocking, HTTPS, link cleaning, Fire button | One-click, well-known brand | Mostly duplicates Firefox Strict; pushes DuckDuckGo search | Remove. Link cleaning and Forget are in ours |
+| **DuckDuckGo Essentials** | Tracker blocking, HTTPS, link cleaning, Fire button | One-click, well-known brand | Mostly duplicates Firefox Strict; pushes DuckDuckGo search | Remove. Link cleaning is in ours; Firefox's padlock menu clears a site |
 | **Malwarebytes Browser Guard** | Blocks scam, phishing and malware sites | Big security brand | Closed source, heavy (34 MB), Firefox Safe Browsing + uBlock cover most of it | Remove |
 | **Port Authority** | Stops sites (eBay was caught doing it) scanning your home network | Exposed a real abuse | Firefox 153+ now asks you instead | Remove |
 | **Chrome Mask** | Makes a site think you use Chrome | Some sites wrongly block Firefox | Only needed on a few sites | In ours, per site |
 | **Don't Track Me Google** | Makes Google results link straight to the site | Google logs every click | Small job | In ours |
-| **Flagfox** | Flag of the country the site's server is in | Fun, spots dodgy sites hosted somewhere odd | Not really privacy; big sites use servers everywhere (CDNs) | In ours |
+| **Flagfox** | Flag of the country the site's server is in | Fun, spots dodgy sites hosted somewhere odd | Not really privacy; big sites use servers everywhere (CDNs) | Remove, left out |
 | **PopUpOFF** | Hides cookie banners and "subscribe!" pop-ups | Pop-ups are annoying | Can hide real parts of a page | In ours, per site |
 | **ClearURLs** | Removes tracking bits from links | Clean links to share | Firefox Strict strips some; can break the odd link | In ours |
 | **NoScript** | Blocks all JavaScript until you allow a site | Very strong security | Breaks almost every site until you set it up; hard work | Remove; uBlock has a per-site JavaScript switch |
@@ -71,12 +71,8 @@ Since then Firefox has built most of it in:
 - **How:** when you open a page, Firefox lets the add-on look at the address first. If it has tracking bits (`utm_source`, `fbclid` and ~60 others), it removes them and opens the clean address instead. If it's a redirect link like `google.com/url?q=real-site`, it jumps straight to the real site. Only the page you open is checked, not every image or script, so it's fast.
 - **Why:** those bits tell the site (and Google/Facebook) exactly where you came from. Firefox Strict only strips a few, and never `utm_`.
 - **Pros:** cleaner, shorter links to share; less tracking. "Copy clean link" in the right-click menu for sharing.
-- **Cons:** very rarely a site needs one of those bits (for example, some discount links). Turn the switch off if a link stops working.
-
-### Server country flag
-- **How:** when a page loads, Firefox tells the add-on the server's IP address. The add-on looks it up in a country list stored inside the add-on (5 MB, free CC0 data), so nothing goes online. The flag appears in the address bar.
-- **Why:** a quick check. A "bank" hosted in an unexpected country is a warning sign.
-- **Cons:** big sites use servers all over the world (CDNs), so it often shows the nearest copy, not the company's country. Treat it as a hint, not proof.
+- **Cons:** very rarely a site needs one of those bits (for example, some discount links).
+- **You'll always know:** when a link is cleaned, the add-on's icon shows a **1**. Hover it to see what was removed, or open the popup and press **Open original link** to load it exactly as it was.
 
 ### Remove pop-ups (per site)
 - **How:** on sites you turn it on for, it looks for boxes that float over the page (cookie walls, "sign up!" boxes, dark see-through backdrops), hides them, and lets the page scroll again. It skips anything you opened yourself in the last few seconds, and anything that holds the page's main content.
@@ -88,11 +84,6 @@ Since then Firefox has built most of it in:
 - **How:** every request tells sites which browser you use (the "user agent"). On sites you choose, the add-on swaps it to say Chrome, and also changes the JavaScript checks sites use, so both match.
 - **Why:** some sites (some banks, Teams-style apps, ticket sites) say "Firefox not supported" even though Firefox works fine.
 - **Cons:** occasionally a site sends Chrome-only code that doesn't work in Firefox. Turn it off for that site. Only use it where you need it.
-
-### Forget this site
-- **How:** one button deletes that site's cookies and saved data, then reloads.
-- **Why:** quick way to stop a site recognising you, or fix a site that's acting weird.
-- **Cons:** you'll be signed out of that site.
 
 ### Hide your local IP (WebRTC)
 - **How:** WebRTC is the tech behind video calls in the browser. By default it can reveal your home network address, and sometimes your real IP even when using a VPN. This setting makes it use only your normal public connection.
@@ -106,12 +97,18 @@ Since then Firefox has built most of it in:
 - **How:** turns on Firefox's strongest anti-fingerprinting mode (the one Tor Browser uses). Sites see UTC time, light mode and a standard window size, so you look like everyone else using it.
 - **Cons:** clocks on sites show the wrong time zone, dark mode stops working on sites, some sites break. Strict mode already has a lighter version, which is enough for most people.
 
-### Don't pre-load links (off by default)
-- **How:** Firefox normally guesses which link you'll click and starts connecting early, to save time. This stops that.
-- **Pros:** slightly more private (sites you didn't visit don't get a connection). **Cons:** pages open a little slower. That's why it's off.
-
 ### Tabs
-- **Alt+Shift+D** duplicates the tab (or all selected tabs). There are also buttons to duplicate to a new window and to move the tab to a new window. "Stay on this tab" keeps you where you are.
+- **Alt+Shift+D** duplicates the tab (or all selected tabs) and keeps you on the tab you were on. There are also buttons to duplicate to a new window and to move the tab to a new window.
+
+### Seeing what it did, and turning it off
+- **The number on the icon** counts what the add-on changed on the current page (a cleaned link, pop-up remover, Chrome mode). No number means it did nothing there.
+- **Pause on this site** (top of the popup) turns the whole add-on off for that site. The icon then says **off**.
+- **Something broken?** at the bottom of the popup lists the three things to check, in order: this add-on, uBlock Origin's power button, Firefox's shield icon.
+
+### Left out on purpose
+- **Server country flag** (Flagfox): big sites use servers all over the world, so it mostly shows the nearest copy. Rarely useful.
+- **Forget this site**: Firefox already has it. Click the **padlock** left of the address › **Clear cookies and site data**.
+- **Don't pre-load links**: makes pages open slower, and speed matters more.
 
 ### Check-up
 - Reads Firefox's own settings and shows a tick or a fix for each: Strict tracking protection, cookie protection, HTTPS-Only, and "Tell websites not to sell or share my data". Firefox doesn't let add-ons change these, so it tells you where to click.
@@ -121,4 +118,3 @@ Since then Firefox has built most of it in:
 - **Removing the ~15 extensions is the biggest speed-up.** Most of them ran code on every request on every page.
 - **uBlock Origin makes pages faster**, because ads and trackers never download.
 - **Our add-on** only runs a tiny check when you open a page. The Chrome swap is done by Firefox itself, not by code, and the pop-up remover only loads on sites you chose. So it shouldn't slow you down noticeably.
-- The only setting that slows things is "Don't pre-load links", and it's off.

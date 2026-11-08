@@ -10,11 +10,10 @@ const MSF_DEFAULTS = {
   webrtcStrict: false,
   blockPing: true,
   resistFingerprinting: false,
-  noPrefetch: false,
   // Tabs
-  dupBackground: false,
-  // This site
-  showFlag: true,
+  dupBackground: true,  // stay on the current tab after duplicating
+  // Per site
   popupSites: {},   // { "example.com": "popups" | "all" }
   chromeSites: [],  // ["example.com"]
+  pausedSites: [],  // ["example.com"]: this add-on does nothing there
 };

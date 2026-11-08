@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "More Settings for Firefox",
   "version": "1.0.0",
-  "description": "Privacy extras Firefox and uBlock Origin don't have: clean tracking out of links, remove pop-ups per site, pretend to be Chrome, server country flag, forget a site, hidden privacy settings.",
+  "description": "Privacy extras Firefox and uBlock Origin don't have: clean tracking out of links (and see when it happens), remove pop-ups per site, pretend to be Chrome, hidden privacy settings, Alt+Shift+D duplicate tab.",
   "icons": {
     "48": "icon.svg",
     "96": "icon.svg"
@@ -12,15 +12,10 @@
     "default_popup": "popup.html",
     "default_title": "More Settings for Firefox"
   },
-  "page_action": {
-    "default_title": "Server location",
-    "default_popup": "popup.html"
-  },
   "background": {
     "scripts": [
       "settings.js",
       "lib/links.js",
-      "lib/ipdb.js",
       "background.js"
     ]
   },
@@ -48,10 +43,8 @@
     "declarativeNetRequest",
     "webRequest",
     "webRequestBlocking",
-    "browsingData",
     "menus",
-    "clipboardWrite",
-    "dns"
+    "clipboardWrite"
   ],
   "host_permissions": [
     "<all_urls>"

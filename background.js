@@ -5,14 +5,40 @@
 let settings = null;
 const settingsReady = browser.storage.local.get(MSF_DEFAULTS).then((s) => (settings = s));
 
+// ---------- Site helpers ----------
+// True when host is one of the sites in the list, or a subdomain of one.
+const onSite = (sites, host) => !!host && sites.some((s) => host === s || host.endsWith('.' + s));
+const hostOf = (url) => { try { return new URL(url).hostname; } catch { return ''; } };
+const isPaused = (host) => onSite(settings.pausedSites, host);
+
 // ---------- Links: clean tracking out of every page you open ----------
-function cleanNavigation(details) {
+// What was cleaned is kept per tab (storage.session "act<tabId>") so the badge and the popup can show it.
+const ACT_KEY = (tabId) => `act${tabId}`;
+const bypassTabs = new Map();  // tabId -> time until which that tab's links aren't cleaned ("Open original link")
+
+async function cleanNavigation(details) {
   if (details.method !== 'GET') return {};
-  const run = (s) => {
-    const next = msfCleanOnce(details.url, s);
-    return next ? { redirectUrl: next } : {};
-  };
-  return settings ? run(settings) : settingsReady.then(run);
+  await settingsReady;
+  if ((bypassTabs.get(details.tabId) || 0) > Date.now()) return {};
+  if (isPaused(hostOf(details.url))) return {};
+  const next = msfCleanOnce(details.url, settings);
+  if (!next) return {};
+  if (details.tabId >= 0) {
+    const key = ACT_KEY(details.tabId);
+    const prev = (await browser.storage.session.get(key))[key];
+    // A redirect that was skipped and then had tracking removed counts as one change.
+    const chained = prev && prev.url === details.url && Date.now() - prev.time < 15000;
+    await browser.storage.session.set({
+      [key]: {
+        from: chained ? prev.from : details.url,
+        url: next.url,
+        notes: chained ? [...prev.notes, next.note] : [next.note],
+        time: Date.now(),
+        page: null,
+      },
+    });
+  }
+  return { redirectUrl: next.url };
 }
 browser.webRequest.onBeforeRequest.addListener(cleanNavigation, { urls: ['http://*/*', 'https://*/*'], types: ['main_frame'] }, ['blocking']);
 
@@ -28,87 +54,55 @@ function updateMenu() {
   });
 }
 
-// ---------- Server country flag ----------
-const FLAG_KEY = (tabId) => `tab${tabId}`;
-
-function flagEmoji(cc) {
-  if (cc === 'LOCAL') return '🏠';
-  return String.fromCodePoint(...[...cc].map((c) => 0x1f1a5 + c.charCodeAt(0)));
-}
-
-function countryName(cc) {
-  if (cc === 'LOCAL') return 'Your local network';
-  try {
-    return new Intl.DisplayNames(['en'], { type: 'region' }).of(cc) || cc;
-  } catch {
-    return cc;
-  }
-}
-
-function flagImage(cc) {
-  const images = {};
-  for (const size of [16, 32]) {
-    const c = document.createElement('canvas');
-    c.width = c.height = size;
-    const ctx = c.getContext('2d');
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.font = `${Math.round(size * 0.86)}px "Twemoji Mozilla", "Segoe UI Emoji", "Apple Color Emoji", sans-serif`;
-    ctx.fillText(flagEmoji(cc), size / 2, size / 2 + size * 0.06);
-    images[size] = ctx.getImageData(0, 0, size, size);
-  }
-  return images;
-}
-
-async function rememberServer(tabId, url, ip) {
-  let host;
-  try { host = new URL(url).hostname; } catch { return; }
-  if (!ip) {
-    try {
-      ip = (await browser.dns.resolve(host)).addresses[0];
-    } catch {
-      return;
-    }
-  }
-  const cc = await msfIpdb.country(ip);
-  const info = { host, ip, cc };
-  await browser.storage.session.set({ [FLAG_KEY(tabId)]: info });
-  return info;
-}
-
-async function showFlag(tabId, url) {
+// ---------- Badge: how many things this add-on is doing on the page ----------
+// The number on the toolbar icon. Hover it for the list; open the popup for details and undo.
+async function pageActivity(tabId, url) {
   await settingsReady;
-  let host;
-  try { host = new URL(url).hostname; } catch { host = null; }
-  if (!settings.showFlag || !host || !/^https?:/.test(url)) {
-    browser.pageAction.hide(tabId).catch(() => {});
-    return;
-  }
-  let info = (await browser.storage.session.get(FLAG_KEY(tabId)))[FLAG_KEY(tabId)];
-  if (!info || info.host !== host) info = await rememberServer(tabId, url, null);
-  if (!info?.cc) {
-    browser.pageAction.hide(tabId).catch(() => {});
-    return;
-  }
+  const host = hostOf(url);
+  const items = [];
+  if (isPaused(host)) return { paused: true, items };
+  const act = (await browser.storage.session.get(ACT_KEY(tabId)))[ACT_KEY(tabId)];
+  if (act?.page && act.page === url) items.push(`Link cleaned: ${act.notes.join('; ')}`);
+  if (onSite(Object.keys(settings.popupSites), host)) items.push('Pop-up remover is on');
+  if (onSite(settings.chromeSites, host)) items.push('Pretending to be Chrome');
+  return { paused: false, items };
+}
+
+async function updateBadge(tabId, url) {
+  const { paused, items } = await pageActivity(tabId, url);
+  const title = paused
+    ? 'More Settings for Firefox: paused on this site'
+    : items.length ? `More Settings for Firefox:\n• ${items.join('\n• ')}` : 'More Settings for Firefox: nothing changed on this page';
   try {
-    await browser.pageAction.setIcon({ tabId, imageData: flagImage(info.cc) });
-    await browser.pageAction.setTitle({ tabId, title: `${countryName(info.cc)} · ${info.ip}` });
-    await browser.pageAction.show(tabId);
+    await browser.action.setBadgeText({ tabId, text: paused ? 'off' : items.length ? String(items.length) : '' });
+    await browser.action.setBadgeBackgroundColor({ tabId, color: paused ? '#5b5b66' : '#8dd28d' });
+    await browser.action.setBadgeTextColor({ tabId, color: paused ? '#ffffff' : '#102010' });
+    await browser.action.setTitle({ tabId, title });
   } catch { /* tab closed */ }
 }
 
-browser.webRequest.onResponseStarted.addListener(async (d) => {
-  if (d.tabId < 0) return;
-  await settingsReady;
-  if (!settings.showFlag || !d.ip) return;  // no ip (cache): showFlag looks it up once the page is shown
-  await rememberServer(d.tabId, d.url, d.ip);
-  showFlag(d.tabId, d.url);
-}, { urls: ['http://*/*', 'https://*/*'], types: ['main_frame'] });
-
-browser.tabs.onUpdated.addListener((tabId, change, tab) => {
-  if (!tab.discarded && (change.url || change.status === 'complete')) showFlag(tabId, tab.url);
+browser.tabs.onUpdated.addListener(async (tabId, change, tab) => {
+  if (tab.discarded) return;
+  if (change.url) {
+    const key = ACT_KEY(tabId);
+    const act = (await browser.storage.session.get(key))[key];
+    if (act) {
+      if (act.page === null && Date.now() - act.time < 15000) {
+        act.page = change.url;  // the page the cleaned link ended up on
+        await browser.storage.session.set({ [key]: act });
+      } else if (act.page !== change.url) {
+        await browser.storage.session.remove(key);  // you've moved on to another page
+      }
+    }
+  }
+  if (change.url || change.status === 'complete') updateBadge(tabId, tab.url);
 });
-browser.tabs.onRemoved.addListener((tabId) => browser.storage.session.remove(FLAG_KEY(tabId)));
+browser.tabs.onRemoved.addListener((tabId) => {
+  bypassTabs.delete(tabId);
+  browser.storage.session.remove(ACT_KEY(tabId));
+});
+
+const updateAllBadges = () => browser.tabs.query({ discarded: false }).then((tabs) => tabs.forEach((t) => updateBadge(t.id, t.url)));
 
 // ---------- Firefox privacy settings ----------
 async function applyPrivacy() {
@@ -119,7 +113,6 @@ async function applyPrivacy() {
       settings.webrtcStrict ? 'disable_non_proxied_udp' : 'default_public_interface_only'),
     set(p.websites.hyperlinkAuditingEnabled, settings.blockPing, false),
     set(p.websites.resistFingerprinting, settings.resistFingerprinting, true),
-    set(p.network.networkPredictionEnabled, settings.noPrefetch, false),
   ]);
 }
 
@@ -160,8 +153,10 @@ async function registerScript(id, hosts, options) {
 }
 
 async function applySites() {
-  const popupHosts = Object.keys(settings.popupSites).filter(validHost);
-  const chromeHosts = settings.chromeSites.filter(validHost);
+  // Paused sites get nothing from this add-on.
+  const active = (h) => validHost(h) && !isPaused(h);
+  const popupHosts = Object.keys(settings.popupSites).filter(active);
+  const chromeHosts = settings.chromeSites.filter(active);
   const steps = [
     () => registerScript('popups', popupHosts, { js: ['content/popups.js'], runAt: 'document_idle' }),
     () => registerScript('chrome-mask', chromeHosts, {
@@ -238,6 +233,7 @@ const TAB_COMMANDS = {
   'new-tab-to-the-right': newTabRight,
 };
 browser.commands.onCommand.addListener((command) => TAB_COMMANDS[command]?.());
+
 browser.runtime.onMessage.addListener((msg) => {
   if (msg?.type === 'tabCommand' && TAB_COMMANDS[msg.command]) return TAB_COMMANDS[msg.command]().then(() => true);
   // Popup: save per-site lists and wait until the rules are in place (so a reload uses them).
@@ -246,8 +242,21 @@ browser.runtime.onMessage.addListener((msg) => {
       await browser.storage.local.set(msg.changes);
       Object.assign(settings, msg.changes);
       await applyAll(['sites']);
+      await updateAllBadges();
       return true;
     });
+  }
+  // Popup: "Open original link" loads the address as it was, without cleaning, in that tab only.
+  if (msg?.type === 'openOriginal') {
+    return (async () => {
+      const key = ACT_KEY(msg.tabId);
+      const act = (await browser.storage.session.get(key))[key];
+      if (!act) return false;
+      bypassTabs.set(msg.tabId, Date.now() + 10000);
+      await browser.storage.session.remove(key);
+      await browser.tabs.update(msg.tabId, { url: act.from });
+      return true;
+    })();
   }
 });
 
@@ -263,19 +272,16 @@ function applyAll(parts = ['privacy', 'sites', 'menu']) {
   return applying;
 }
 
-const PRIVACY_KEYS = ['webrtcProtect', 'webrtcStrict', 'blockPing', 'resistFingerprinting', 'noPrefetch'];
+const PRIVACY_KEYS = ['webrtcProtect', 'webrtcStrict', 'blockPing', 'resistFingerprinting'];
 browser.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') return;
   settingsReady.then(() => {
     for (const [k, { newValue }] of Object.entries(changes)) settings[k] = newValue ?? MSF_DEFAULTS[k];
     const parts = [];
     if (PRIVACY_KEYS.some((k) => k in changes)) parts.push('privacy');
-    if ('popupSites' in changes || 'chromeSites' in changes) parts.push('sites');
+    if ('popupSites' in changes || 'chromeSites' in changes || 'pausedSites' in changes) parts.push('sites');
     if ('cleanLinkMenu' in changes) parts.push('menu');
-    if (parts.length) applyAll(parts);
-    if ('showFlag' in changes) {
-      browser.tabs.query({ discarded: false }).then((tabs) => tabs.forEach((t) => showFlag(t.id, t.url)));
-    }
+    if (parts.length) applyAll(parts).then(updateAllBadges);
   });
 });
 
