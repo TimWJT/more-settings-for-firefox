@@ -345,9 +345,15 @@ browser.storage.onChanged.addListener((changes, area) => {
 });
 
 browser.runtime.onInstalled.addListener(() => applyAll());
-// Each time this page starts (browser start, add-on re-enabled, woken up), check the per-site scripts and rules
-// are still in place. registerScript and the rule check only change something if it's missing or different.
+// Check the per-site scripts and rules are in place once per browser session (browser start, add-on
+// re-enabled or updated), not on every wake-up: storage.session is empty again after each of those.
+// Measured: re-checking on every wake added ~25 ms to the first page load after the add-on had been idle.
+// It also waits a moment so it never competes with the page load that woke this page up.
 browser.runtime.onStartup.addListener(() => applyAll(['menu']));
-applyAll(['sites']);
+setTimeout(async () => {
+  if ((await browser.storage.session.get('sitesChecked')).sitesChecked) return;
+  await applyAll(['sites']);
+  await browser.storage.session.set({ sitesChecked: true });
+}, 1500);
 // Website access granted later (from the popup's Allow button): set everything up now.
 browser.permissions.onAdded.addListener(() => applyAll());
