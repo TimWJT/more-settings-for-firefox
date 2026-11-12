@@ -164,7 +164,8 @@ function sitePanel() {
     set: async (on) => {
       if (!level()) return;
       await setLevel(on ? 'all' : 'popups');
-      runOnPage((lvl) => window.msfPopups?.start(lvl, true), on ? 'all' : 'popups');
+      // Turning it off: put back what "all" hid or unstuck, then hide only the pop-ups again.
+      runOnPage((lvl) => { if (lvl !== 'all') window.msfPopups?.stop(); return window.msfPopups?.start(lvl, true); }, on ? 'all' : 'popups');
     },
   });
   all.input.disabled = !level();
@@ -228,7 +229,7 @@ function sitePanel() {
   // What to do when a site breaks
   const broken = wide('Something broken?',
     h('ol', { class: 'steps' },
-      h('li', {}, h('b', {}, 'This add-on: '), 'turn the big switch at the top to Off, then reload.'),
+      h('li', {}, h('b', {}, 'This add-on: '), 'turn the big switch at the top to Off, then reload. Privacy tab settings apply to all sites; turn those off there.'),
       h('li', {}, h('b', {}, 'uBlock Origin: '), 'click its icon, then its big power button.'),
       h('li', {}, h('b', {}, 'Firefox: '), 'click the shield left of the address bar and turn protection off for this site.')),
     note('Reload after each one. Whatever fixes it was the cause.'));
@@ -312,7 +313,7 @@ function tabsPanel() {
   });
   box.addEventListener('blur', () => { if (recording) { stopRecording(); show(); } });
   box.addEventListener('keydown', async (e) => {
-    if (!recording) return;
+    if (!recording || e.key === 'Tab') return;  // Tab still moves focus (and blur stops recording)
     e.preventDefault();
     e.stopPropagation();
     if (e.key === 'Escape') { stopRecording(); show(); status.textContent = 'Not changed.'; return; }

@@ -6,7 +6,7 @@
   --input: #ffffff14;
   --input-hover: #ffffff22;
   --text: #ececec;
-  --muted: #a8a8a8;
+  --muted: #b8b8b8;       /* 4.5:1 or better on the cards over the orange header wash */
   --line: #ffffff10;
   --accent: #8dd28d;       /* Better Canvas green: switches, checkboxes, Copy button */
   --accent-hover: #a3dca3;

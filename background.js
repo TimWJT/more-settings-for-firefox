@@ -197,8 +197,10 @@ async function registerScript(id, hosts, paused, options) {
     ? { id, matches: matchesFor(hosts), excludeMatches: paused.length ? matchesFor(paused) : undefined, persistAcrossSessions: true, ...options }
     : null;
   const same = (a, b) => JSON.stringify([...(a || [])].sort()) === JSON.stringify([...(b || [])].sort());
+  // Unset options are compared as Firefox's defaults.
+  const opts = (o) => [o.runAt || 'document_idle', !!o.allFrames, o.world || 'ISOLATED', !!o.matchOriginAsFallback].join();
   if (existing && wanted && same(existing.matches, wanted.matches) && same(existing.excludeMatches, wanted.excludeMatches)
-    && same(existing.js, wanted.js)) return;
+    && same(existing.js, wanted.js) && opts(existing) === opts(wanted)) return;
   if (existing) await browser.scripting.unregisterContentScripts({ ids: [id] });
   if (wanted) await browser.scripting.registerContentScripts([wanted]);
 }

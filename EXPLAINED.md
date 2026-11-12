@@ -109,7 +109,7 @@ Since then Firefox has built most of it in:
 
 ### Seeing what it did, and turning it off
 - **The number on the icon** counts what the add-on changed on the current page (a cleaned link, pop-up remover, Chrome mode). No number means it did nothing there.
-- **Pause on this site** (the big On/Off switch at the top of the popup) turns the whole add-on off for that site. The icon then says **off**.
+- **Pause on this site** (the big On/Off switch at the top of the popup) turns link cleaning, pop-up removal and Chrome mode off for that site. The icon then says **off**. The Privacy tab settings (local IP, click pings, strong protection) are Firefox-wide, so they stay on; switch them off there if a site needs it.
 - **On everywhere** (the pill right of the title) turns the whole add-on off on every site, and hands the privacy settings back to Firefox. Click it again to turn everything back on.
 - **Something broken?** at the bottom of the popup lists the three things to check, in order: this add-on, uBlock Origin's power button, Firefox's shield icon.
 
