@@ -1,53 +1,70 @@
 # More Settings for Firefox
 
-(The popup is titled "Firefox Settings".)
+A Firefox add-on with the privacy and tab extras that Firefox and uBlock Origin don't already do: clean links, remove pop-ups per site, pretend to be Chrome, hidden privacy settings and a duplicate-tab shortcut.
 
-A Firefox add-on with the privacy and tab extras that Firefox and uBlock Origin don't already do. It replaces a stack of popular add-ons (Chrome Mask, Don't Track Me Google, ClearURLs, PopUpOFF, Duplicate Tab Shortcut and the useful settings from Privacy Badger and DuckDuckGo) with one small add-on. Everything it does is visible: the number on its icon counts what it changed on the page, and each change can be undone. Firefox 128+.
+**[Install from Firefox Add-ons](https://addons.mozilla.org/firefox/addon/more-settings-for-firefox/)** (Firefox 128 or later)
 
-Keep **uBlock Origin** for ads and trackers, and set Firefox's **Enhanced Tracking Protection to Strict**.
+![Links tab: clean tracking out of links](screenshots/1-links.png)
+
+![This site tab: on/off per site, pop-ups and Chrome mode](screenshots/2-this-site.png)
+
+![Privacy tab: local IP, click pings, fingerprinting](screenshots/3-privacy.png)
+
+It is made to sit next to uBlock Origin, not replace it. Keep uBlock Origin for ads and trackers, and set Firefox's Enhanced Tracking Protection to Strict.
 
 ## Features
 
-| Feature | Default |
+- **Clean links**: removes utm_, fbclid, gclid and about 60 more tracking parameters, skips redirect links (Google, Facebook, Reddit and others) and opens real pages instead of AMP.
+- **Copy clean link** in the right-click menu.
+- **See what changed**: a number on the toolbar icon counts what the add-on changed on the page. The popup lists it, with **Open original link** to undo.
+- **On/off per site**, and one button to turn the whole add-on off everywhere.
+- **Remove pop-ups** on the sites you choose: cookie walls, sign-up boxes, dark overlays and scroll lock.
+- **Pretend to be Chrome** on sites that say Firefox isn't supported.
+- **Hidden privacy settings**: hide your local IP from WebRTC, block click pings, and optional strong fingerprint protection.
+- **Duplicate tab** with a keyboard shortcut.
+- **Check-up** of Firefox's own privacy settings, with where to change each one.
+
+On install it hides your local IP and blocks click pings. Both are switches you can turn off.
+
+## Keyboard shortcuts
+
+| Keys | What it does |
 |---|---|
-| **Remove tracking from links**: utm_*, fbclid, gclid, msclkid, Mailchimp, HubSpot, Spotify/YouTube `si=` and about 60 more, as each page opens | on |
-| **Skip redirect links**: Google, Facebook, Instagram, Threads, YouTube, Reddit, Steam, Tumblr, Bing, DuckDuckGo, LinkedIn and Slack go straight to the site | on |
-| **Real pages instead of AMP** (Google AMP and ampproject.org links) | on |
-| **Copy clean link** in the right-click menu, with a short note on the page saying what it removed | on |
-| **See what changed**: the toolbar icon shows a number when the add-on changed something on the page (hover for the list). The popup shows what was removed, with **Open original link** to load it as it was | on |
-| **Pause on this site**: the big On/Off switch at the top of the popup, turns link cleaning, pop-up removal and Chrome mode off for one site (the Privacy tab settings apply to every site; turn those off there). Open pages change straight away; a Reload page button only appears when something can't change without one (Chrome mode, a cleaned link) | – |
-| **On everywhere** button right of the title: one click turns the whole add-on off on every site (link cleaning, pop-ups, Chrome mode, privacy settings, right-click menu, shortcut). Firefox gets its own settings back | on |
-| **Remove pop-ups** per site: cookie walls, sign-up boxes, dark overlays, scroll lock. Optional: also hide bars that follow you as you scroll. "Hide pop-ups now" and "Bring them back" buttons | off (per site) |
-| **Pretend to be Chrome** per site, for sites that say Firefox isn't supported (headers and JavaScript both) | off (per site) |
-| **Hide your local IP** from WebRTC | on |
-| **Block click pings** (`<a ping>`) | on |
-| **Strong fingerprint protection** (Firefox's resistFingerprinting) | off |
-| **Duplicate tab** with **Alt+Shift+D** (change the keys in the popup; stays on the current tab; works on several selected tabs) | on |
-| **Check-up** of Firefox's own settings: tracking protection, cookie protection, secure connections, "do not sell or share" | – |
+| Alt+Shift+D | Duplicate the current tab (or all selected tabs). Change the keys in the popup's Tabs tab. |
 
-Performance: the only code that runs per request is a check on each page you open (not on images, scripts or other files). The Chrome headers are changed by a Firefox rule, not by code. Pop-up removal and the Chrome mask only load on sites you switch them on for.
+## Privacy
 
-## What was left out, and why
+- Collects no data and sends nothing anywhere. Settings are stored in Firefox on your own computer.
+- It needs access to all sites so it can clean the links you open. It only looks at the pages you open, not images, scripts or other files.
+- Pop-up removal and Chrome mode only run on sites you switch them on for.
 
-| From | Left out | Because |
-|---|---|---|
-| Disconnect, Privacy Badger, DuckDuckGo, Malwarebytes | Tracker and malware blocklists | uBlock Origin, Enhanced Tracking Protection (Strict) and Safe Browsing already do it. Malwarebytes' list is closed source |
-| Port Authority | Blocking sites from scanning your network | Firefox 153+ asks before a site can reach your local network |
-| Privacy Badger | Social button click-to-load | ETP Strict's SmartBlock embeds |
-| DuckDuckGo | HTTPS upgrade, Global Privacy Control | Firefox settings (see Check-up) |
-| NoScript | Blocking JavaScript per site | uBlock Origin's `</>` switch in its popup |
-| CanvasBlocker | Canvas noise | ETP Strict fingerprinting protection, or the Strong protection switch here |
-| Decentraleyes | Local copies of CDN libraries | Firefox keeps each site's cache separate, so CDNs can't follow you across sites that way any more |
-| User-Agent Switcher | Picking any browser | Pretend to be Chrome covers the case that matters |
-| Flagfox | Server country flag | Rarely useful: big sites use servers everywhere, so it mostly shows the nearest copy |
-| DuckDuckGo | Forget this site | Firefox has it: padlock in the address bar › Clear cookies and site data |
-| FoxyProxy | Proxy switching | Not a privacy feature on its own |
+## What it leaves to others
 
-All code is written from scratch.
+Some features from other privacy add-ons were left out because Firefox or uBlock Origin already do them:
 
-## Try it
+| Left out | Already covered by |
+|---|---|
+| Tracker and malware blocklists | uBlock Origin, Enhanced Tracking Protection (Strict), Safe Browsing |
+| Blocking JavaScript per site | uBlock Origin's `</>` switch |
+| HTTPS upgrade, Global Privacy Control | Firefox settings (see Check-up) |
+| Social button click-to-load | Enhanced Tracking Protection (Strict) |
+| Canvas noise | Enhanced Tracking Protection (Strict), or the Strong protection switch here |
+| Blocking sites from scanning your network | Firefox 153+ asks before a site can reach your local network |
+| Forget this site | Firefox: padlock in the address bar > Clear cookies and site data |
 
-1. Open `about:debugging#/runtime/this-firefox`
-2. **Load Temporary Add-on…** and pick `manifest.json` in this folder
+## Report a problem
 
-Build: `npx web-ext build` (or lint: `npx web-ext lint`).
+Open an issue on the [Issues page](https://github.com/TimWJT/more-settings-for-firefox/issues). Say what you expected, what happened, the site, and your Firefox version.
+
+## For developers
+
+- Run from source: open `about:debugging#/runtime/this-firefox`, click **Load Temporary Add-on…** and pick `manifest.json`.
+- Build: `npx web-ext build`. Lint: `npx web-ext lint`.
+- How each part works is in [EXPLAINED.md](EXPLAINED.md). Design notes are in [NOTES.md](NOTES.md).
+- All code is written from scratch.
+
+## Licence
+
+All Rights Reserved. The source is public so it can be read and reviewed. See [LICENSE](LICENSE).
+
+Not affiliated with Mozilla.
