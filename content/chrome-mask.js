@@ -3,11 +3,11 @@
 (() => {
   const weeks = (Date.now() - Date.UTC(2025, 5, 24)) / (7 * 864e5);
   const v = String(138 + Math.max(0, Math.floor(weeks / 5) - 1));  // same formula as chromeVersion() in background.js
-  const mac = /Mac/.test(navigator.platform);
-  const ua = mac
-    ? `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${v}.0.0.0 Safari/537.36`
-    : `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${v}.0.0.0 Safari/537.36`;
-  const platform = mac ? 'macOS' : 'Windows';
+  // Chrome on the same kind of computer: Mac, Linux, else Windows (same choice as chromeHeaders() in background.js).
+  const mac = /Mac/.test(navigator.platform), linux = !mac && /Linux/.test(navigator.platform);
+  const system = mac ? 'Macintosh; Intel Mac OS X 10_15_7' : linux ? 'X11; Linux x86_64' : 'Windows NT 10.0; Win64; x64';
+  const ua = `Mozilla/5.0 (${system}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${v}.0.0.0 Safari/537.36`;
+  const platform = mac ? 'macOS' : linux ? 'Linux' : 'Windows';
   const brands = [
     { brand: 'Chromium', version: v },
     { brand: 'Google Chrome', version: v },
@@ -23,7 +23,7 @@
   getter(nav, 'userAgent', ua);
   getter(nav, 'appVersion', ua.replace('Mozilla/', ''));
   getter(nav, 'vendor', 'Google Inc.');
-  getter(nav, 'platform', mac ? 'MacIntel' : 'Win32');
+  getter(nav, 'platform', mac ? 'MacIntel' : linux ? 'Linux x86_64' : 'Win32');
   // Firefox-only properties: Chrome doesn't have them at all.
   for (const name of ['oscpu', 'buildID']) {
     try { delete nav[name]; } catch { /* locked */ }
@@ -37,13 +37,13 @@
     getHighEntropyValues: async (hints) => {
       const all = {
         brands, mobile: false, platform,
-        platformVersion: mac ? '15.0.0' : '15.0.0',
+        platformVersion: mac ? '15.0.0' : linux ? '6.8.0' : '15.0.0',
         architecture: 'x86', bitness: '64', model: '', wow64: false,
         uaFullVersion: `${v}.0.0.0`,
         fullVersionList: brands.map((b) => ({ brand: b.brand, version: b.brand === 'Not/A)Brand' ? '99.0.0.0' : `${v}.0.0.0` })),
       };
       const out = { brands, mobile: false, platform };
-      for (const h of hints || []) if (h in all) out[h] = all[h];
+      for (const h of hints || []) if (Object.hasOwn(all, h)) out[h] = all[h];
       return out;
     },
     toJSON: () => ({ brands, mobile: false, platform }),

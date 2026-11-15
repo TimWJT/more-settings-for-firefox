@@ -3,7 +3,8 @@
 // Listeners are added at the top level so Firefox can wake this page for them.
 
 let settings = null;
-const settingsReady = browser.storage.local.get(MSF_DEFAULTS).then((s) => (settings = s));
+// If storage can't be read, run on the defaults rather than failing every page load.
+const settingsReady = browser.storage.local.get(MSF_DEFAULTS).then((s) => (settings = s), () => (settings = { ...MSF_DEFAULTS }));
 
 // ---------- Site helpers ----------
 // True when host is one of the sites in the list, or a subdomain of one.
@@ -36,10 +37,14 @@ async function cleanNavigation(details) {
   const now = Date.now();
   // A redirect that was skipped and then had tracking removed counts as one change.
   const chained = prev && prev.page === null && now - prev.time < 10000;
-  const count = chained ? (prev.count || 1) + 1 : 1;
-  // Loop guard: if the site keeps adding the parameter back, stop cleaning this tab for a bit.
+  // The page loaded and then sent you straight back to the same tracked address (a script putting it back).
+  const again = prev && prev.from === details.url && now - prev.time < 10000;
+  const count = chained || again ? (prev.count || 1) + 1 : 1;
+  // Loop guard: if the site keeps adding the parameter back, stop cleaning this tab for a bit,
+  // and forget the last cleaning so the page that loads now isn't shown as cleaned.
   if (count > 4) {
     await setBypass(details.tabId, 15000);
+    await browser.storage.session.remove(key);
     return {};
   }
   await browser.storage.session.set({
@@ -92,7 +97,7 @@ function showCopyToast(title, detail) {
 }
 
 function updateMenu() {
-  browser.menus.remove('copy-clean-link').catch(() => {}).finally(() => {
+  return browser.menus.remove('copy-clean-link').catch(() => {}).finally(() => {
     if (!settings.enabled || !settings.cleanLinkMenu) return;
     browser.menus.create({ id: 'copy-clean-link', title: 'Copy clean link', contexts: ['link'] }, () => void browser.runtime.lastError);
   });
@@ -172,15 +177,15 @@ function chromeVersion() {
 
 async function chromeHeaders() {
   const v = chromeVersion();
+  // Chrome on the same kind of computer: Mac, Linux, else Windows. Same choice in content/chrome-mask.js.
   const os = (await browser.runtime.getPlatformInfo()).os;
-  const ua = os === 'mac'
-    ? `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${v}.0.0.0 Safari/537.36`
-    : `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${v}.0.0.0 Safari/537.36`;
+  const system = os === 'mac' ? 'Macintosh; Intel Mac OS X 10_15_7' : os === 'linux' ? 'X11; Linux x86_64' : 'Windows NT 10.0; Win64; x64';
+  const ua = `Mozilla/5.0 (${system}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${v}.0.0.0 Safari/537.36`;
   return [
     { header: 'User-Agent', operation: 'set', value: ua },
     { header: 'Sec-CH-UA', operation: 'set', value: `"Chromium";v="${v}", "Google Chrome";v="${v}", "Not/A)Brand";v="99"` },
     { header: 'Sec-CH-UA-Mobile', operation: 'set', value: '?0' },
-    { header: 'Sec-CH-UA-Platform', operation: 'set', value: os === 'mac' ? '"macOS"' : '"Windows"' },
+    { header: 'Sec-CH-UA-Platform', operation: 'set', value: os === 'mac' ? '"macOS"' : os === 'linux' ? '"Linux"' : '"Windows"' },
   ];
 }
 
@@ -287,9 +292,12 @@ browser.commands.onCommand.addListener((command) => {
 browser.runtime.onMessage.addListener((msg) => {
   // Popup: save per-site lists and wait until the rules are in place (so a reload uses them).
   if (msg?.type === 'saveSites') {
+    // Only the per-site lists can be saved this way.
+    const changes = Object.fromEntries(Object.entries(msg.changes || {})
+      .filter(([k]) => ['popupSites', 'chromeSites', 'pausedSites'].includes(k)));
     return settingsReady.then(async () => {
-      await browser.storage.local.set(msg.changes);
-      Object.assign(settings, msg.changes);
+      await browser.storage.local.set(changes);
+      Object.assign(settings, changes);
       await applyAll(['sites']);
       await updateAllBadges();
       return true;
@@ -308,6 +316,7 @@ browser.runtime.onMessage.addListener((msg) => {
   }
   // Popup: "Open original link" loads the address as it was, without cleaning, in that tab only.
   if (msg?.type === 'openOriginal') {
+    if (!Number.isInteger(msg.tabId) || msg.tabId < 0) return Promise.resolve(false);
     return (async () => {
       const key = ACT_KEY(msg.tabId);
       const act = (await browser.storage.session.get(key))[key];
@@ -327,7 +336,7 @@ function applyAll(parts = ['privacy', 'sites', 'menu']) {
     await settingsReady;
     if (parts.includes('privacy')) await applyPrivacy();
     if (parts.includes('sites')) await applySites();
-    if (parts.includes('menu')) updateMenu();
+    if (parts.includes('menu')) await updateMenu();
   }).catch((e) => console.error('More Settings for Firefox:', e));
   return applying;
 }

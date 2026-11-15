@@ -38,8 +38,6 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .header { display: flex; align-items: center; gap: 14px; margin: 0 4px 18px; }
 .header img { width: 46px; height: 46px; }
 .header h1 { font-size: 32px; font-weight: 650; letter-spacing: -0.015em; color: #f2f2f2; line-height: 1.05; }
-.header h1 span { display: block; font-size: 15px; font-weight: 600; letter-spacing: 0; color: #f2f2f2b3; margin-top: 2px; }
-
 /* Tabs */
 .tabs {
   display: grid;
@@ -171,19 +169,6 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .btn.secondary { background: var(--input); }
 .btn.secondary:hover { background: var(--input-hover); }
 .btn:disabled { opacity: .55; cursor: progress; }
-.status { margin: 8px 2px 0; font-size: 13px; color: var(--muted); min-height: 1.4em; }
-.status.error { color: var(--error); }
-
-select {
-  font: inherit;
-  color: var(--text);
-  background: var(--input);
-  border: 0;
-  border-radius: var(--radius-sm);
-  padding: 6px 8px;
-}
-select option { background: #222; }
-
 
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
@@ -269,7 +254,6 @@ select option { background: #222; }
 .keybox:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* This site */
-.buttons.two { grid-template-columns: 1fr; gap: 8px; }
 .buttons.pair { grid-template-columns: 1fr 1fr; gap: 8px; }
 .check input:disabled + span.box { opacity: .4; }
 .check:has(input:disabled) { cursor: default; color: var(--muted); }

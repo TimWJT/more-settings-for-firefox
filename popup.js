@@ -71,7 +71,7 @@ async function reloadTab(active) {
   const key = `act${tab.id}`;
   const act = (await browser.storage.session.get(key))[key];
   if (!active && act?.page === tab.url) await browser.runtime.sendMessage({ type: 'openOriginal', tabId: tab.id });
-  else await browser.tabs.reload(tab.id);
+  else await browser.tabs.reload(tab.id, { bypassCache: !!host && onList(current.chromeSites) }); // a cached page may still be the Firefox one
 }
 
 // ---------- This site ----------
@@ -137,6 +137,9 @@ function sitePanel() {
       const what = Array.isArray(act.notes) ? act.notes.join('. ') + '.' : 'Tracking was removed from the address.';
       list.append(activityRow('✓', 'Link cleaned', what, h('span'), open));
     }
+    // The same things the number on the toolbar icon counts.
+    if (onList(Object.keys(current.popupSites))) list.append(activityRow('✓', 'Pop-up remover is on', 'Cookie boxes and sign-up pop-ups are hidden here.'));
+    if (onList(current.chromeSites)) list.append(activityRow('✓', 'Pretending to be Chrome', 'This site is told your browser is Chrome.'));
     if (!list.children.length) list.append(h('p', { class: 'nothing' }, 'Nothing changed on this page.'));
   })();
 
@@ -432,6 +435,8 @@ function render() {
     if (i < 0) return;
     if (e.key === 'ArrowRight') selectTab(ids[(i + 1) % ids.length], true);
     else if (e.key === 'ArrowLeft') selectTab(ids[(i - 1 + ids.length) % ids.length], true);
+    else if (e.key === 'Home') selectTab(ids[0], true);
+    else if (e.key === 'End') selectTab(ids.at(-1), true);
     else return;
     e.preventDefault();
   });
@@ -479,7 +484,8 @@ async function checkAccess() {
   if (await browser.permissions.contains(all)) return;
   $('access').hidden = false;
   $('grant').addEventListener('click', async () => {
-    if (await browser.permissions.request(all)) $('access').hidden = true;
+    // Granted: open the popup again so "This site" can read the page it's on.
+    if (await browser.permissions.request(all)) location.reload();
   });
 }
 

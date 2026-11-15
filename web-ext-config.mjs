@@ -1,4 +1,4 @@
-// Keep docs out of the packaged .xpi.
+// Keep docs, tools and store screenshots out of the packaged .xpi.
 export default {
-  ignoreFiles: ['tools', '*.md', 'web-ext-config.mjs', '.gitignore'],
+  ignoreFiles: ['tools', 'screenshots', 'data', '*.md', 'web-ext-config.mjs', '.gitignore'],
 };

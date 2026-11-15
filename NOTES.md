@@ -104,5 +104,5 @@ reject `localhost` and IPs. Shorten `extensions.background.idle.timeout` to test
 
 ## Release status
 
-- Local repo, public GitHub `TimWJT/more-settings-for-firefox`. Not on AMO yet. Store text in STORE-LISTING.md.
+- Local repo, public GitHub `TimWJT/more-settings-for-firefox`. Listed on AMO (see README for the link). Store text in STORE-LISTING.md.
 - Before uploading: `npx web-ext lint`, run `tools/test_msf.py`, bump the manifest version.

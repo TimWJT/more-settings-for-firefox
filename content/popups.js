@@ -48,6 +48,8 @@
     if (el.querySelector('main, article, [role="main"], video, canvas, input[type="password"], [contenteditable="true"]')) return true;
     const active = document.activeElement;
     if (active && active !== document.body && el.contains(active)) return true;
+    // The page's text length is only measured when needed, once per scan (it walks the whole page).
+    if (bodyText < 0) bodyText = document.body.textContent.length;
     const own = el.textContent.length;
     return bodyText > 500 && own > bodyText * 0.5;
   }
@@ -150,7 +152,7 @@
   // In "all" mode, sticky headers further down are caught as you scroll to them (see the scroll listener).
   function scanAll() {
     if (!level || !document.body) return;
-    bodyText = document.body.textContent.length;
+    bodyText = -1;
     for (const el of onScreen()) check(el);
     unlock();
   }
@@ -162,7 +164,7 @@
 
   function scanSome(nodes) {
     if (!level || !document.body) return;
-    bodyText = document.body.textContent.length;
+    bodyText = -1;
     let n = 0;
     for (const [node, deep] of nodes) {
       check(node);
@@ -218,6 +220,9 @@
     level = null;
     observer?.disconnect();
     observer = null;
+    clearTimeout(timer); timer = 0;
+    clearTimeout(scrollTimer); scrollTimer = 0;
+    pending = new Map();
     for (const [el, prop, value, priority] of changes.reverse()) {
       if (value) el.style.setProperty(prop, value, priority); else el.style.removeProperty(prop);
       el.removeAttribute('data-msf');

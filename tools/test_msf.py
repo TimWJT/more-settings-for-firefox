@@ -2,8 +2,8 @@ import json, sys, time
 from selenium import webdriver
 from selenium.webdriver.firefox.options import Options
 
-EXT = r"C:\Users\Tim\Documents\Coding\Browser Extensions\more-settings-for-firefox"
-OUT = r"C:\Users\Tim\AppData\Local\Temp\claude\31be50dbb9152be9\98a3e3b3-5140-404e-95da-24df22b10897\scratchpad"
+EXT = str(__import__("pathlib").Path(__file__).resolve().parent.parent)  # the add-on folder
+OUT = __import__("tempfile").gettempdir()  # screenshots go here
 UUID = "4b6a3f1e-6d2c-4a77-9a3e-1f0c2b7d9e11"
 ID = "more-settings-for-firefox@timwjt"
 

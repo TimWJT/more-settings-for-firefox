@@ -10,7 +10,7 @@ from selenium import webdriver
 from selenium.webdriver.firefox.options import Options
 from selenium.webdriver.firefox.service import Service
 
-EXT = r"C:\Users\Tim\Documents\Coding\Browser Extensions\more-settings-for-firefox"
+EXT = str(__import__("pathlib").Path(__file__).resolve().parent.parent)  # the add-on folder
 ID = "more-settings-for-firefox@timwjt"
 UUID = "4b6a3f1e-6d2c-4a77-9a3e-1f0c2b7d9e11"
 N = int(sys.argv[1]) if len(sys.argv) > 1 else 30
