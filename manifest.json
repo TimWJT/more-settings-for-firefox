@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "More Settings for Firefox",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Privacy extras Firefox and uBlock Origin don't have: clean tracking out of links (and see when it happens), remove pop-ups per site, pretend to be Chrome, hidden privacy settings, Alt+Shift+D duplicate tab.",
   "icons": {
     "48": "icon.svg",
